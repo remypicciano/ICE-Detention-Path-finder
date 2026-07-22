@@ -1,4 +1,4 @@
-"""Destructively retain only NYC Area of Responsibility rows in project data."""
+"""Retain NYC arrests and every detention stint belonging to those people."""
 
 from __future__ import annotations
 
@@ -10,15 +10,14 @@ import duckdb
 
 
 NYC_AOR = "New York City Area of Responsibility"
-FILE_FILTERS = (
-    ("arrests-latest.parquet", "apprehension_aor"),
-    ("detention-stints-latest.parquet", "book_in_aor"),
-    ("joined-arrests-detention-stays-latest.parquet", "apprehension_aor"),
-)
+ARRESTS_FILENAME = "arrests-latest.parquet"
+DETENTION_FILENAME = "detention-stints-latest.parquet"
+JOINED_FILENAME = "joined-arrests-detention-stays-latest.parquet"
+REQUIRED_FILENAMES = (ARRESTS_FILENAME, DETENTION_FILENAME, JOINED_FILENAME)
 
 
 class NYCFilterError(Exception):
-    """Raised when the NYC-only replacement cannot be completed safely."""
+    """Raised when the NYC arrest-cohort replacement cannot complete safely."""
 
 
 @dataclass(frozen=True)
@@ -36,21 +35,41 @@ def sql_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def retain_nyc_aor_rows(project_dir: Path) -> list[FilterResult]:
-    """Validate filtered copies of all datasets, then replace every original."""
-    tasks = [
-        (project_dir / filename, column) for filename, column in FILE_FILTERS
-    ]
-    missing = [source.name for source, _column in tasks if not source.is_file()]
+def retain_nyc_arrest_cohort(project_dir: Path) -> list[FilterResult]:
+    """Keep NYC arrests plus all stints for their identifiers, then replace files."""
+    arrests_file = project_dir / ARRESTS_FILENAME
+    detention_file = project_dir / DETENTION_FILENAME
+    joined_file = project_dir / JOINED_FILENAME
+    tasks = (arrests_file, detention_file, joined_file)
+    missing = [source.name for source in tasks if not source.is_file()]
     if missing:
         raise NYCFilterError("Missing required file(s): " + ", ".join(missing))
+
+    arrests_sql = sql_literal(str(arrests_file))
+    aor_sql = sql_literal(NYC_AOR)
+    predicates = {
+        ARRESTS_FILENAME: f"apprehension_aor = {aor_sql}",
+        DETENTION_FILENAME: f"""
+            unique_identifier IN (
+                SELECT unique_identifier
+                FROM read_parquet({arrests_sql})
+                WHERE apprehension_aor = {aor_sql}
+                  AND unique_identifier IS NOT NULL
+            )
+        """,
+        JOINED_FILENAME: f"apprehension_aor = {aor_sql}",
+    }
 
     connection = duckdb.connect(database=":memory:")
     generated: list[tuple[Path, Path]] = []
     results: list[FilterResult] = []
     try:
-        for source, column in tasks:
-            temporary = source.with_name(source.name + ".nyc-filtered.tmp.parquet")
+        for source in tasks:
+            predicate = predicates[source.name]
+            source_sql = sql_literal(str(source))
+            temporary = source.with_name(
+                source.name + ".nyc-arrest-cohort.tmp.parquet"
+            )
             temporary.unlink(missing_ok=True)
 
             original_schema = connection.execute(
@@ -58,33 +77,31 @@ def retain_nyc_aor_rows(project_dir: Path) -> list[FilterResult]:
             ).fetchall()
             original_rows, expected_rows = connection.execute(
                 f"""
-                SELECT count(*), count(*) FILTER (WHERE {column} = ?)
-                FROM read_parquet(?)
-                """,
-                [NYC_AOR, str(source)],
+                SELECT count(*), count(*) FILTER (WHERE {predicate})
+                FROM read_parquet({source_sql})
+                """
             ).fetchone()
 
             connection.execute(
                 f"""
                 COPY (
-                    SELECT * FROM read_parquet(?) WHERE {column} = ?
+                    SELECT * FROM read_parquet({source_sql}) WHERE {predicate}
                 ) TO {sql_literal(str(temporary))}
                 (FORMAT PARQUET, COMPRESSION ZSTD)
-                """,
-                [str(source), NYC_AOR],
+                """
             )
             generated.append((source, temporary))
 
             filtered_schema = connection.execute(
                 "DESCRIBE SELECT * FROM read_parquet(?)", [str(temporary)]
             ).fetchall()
+            temporary_sql = sql_literal(str(temporary))
             retained_rows, invalid_rows = connection.execute(
                 f"""
                 SELECT count(*),
-                       count(*) FILTER (WHERE {column} IS DISTINCT FROM ?)
-                FROM read_parquet(?)
-                """,
-                [NYC_AOR, str(temporary)],
+                       count(*) FILTER (WHERE ({predicate}) IS NOT TRUE)
+                FROM read_parquet({temporary_sql})
+                """
             ).fetchone()
 
             if [row[:2] for row in original_schema] != [
@@ -105,4 +122,3 @@ def retain_nyc_aor_rows(project_dir: Path) -> list[FilterResult]:
         connection.close()
         for _source, temporary in generated:
             temporary.unlink(missing_ok=True)
-

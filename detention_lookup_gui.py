@@ -13,7 +13,7 @@ from tkinter.scrolledtext import ScrolledText
 import duckdb
 
 from detention_lookup import LookupError, fetch_timeline, format_full_timeline
-from nyc_filter import NYCFilterError, FilterResult, retain_nyc_aor_rows
+from nyc_filter import NYCFilterError, FilterResult, retain_nyc_arrest_cohort
 
 
 def application_directory() -> Path:
@@ -54,7 +54,7 @@ class LookupWindow:
         )
         self.filter_button = ttk.Button(
             toolbar,
-            text="Keep NYC AOR Rows Only…",
+            text="Keep NYC Arrest Cohort…",
             command=self.confirm_nyc_filter,
         )
         self.filter_button.grid(row=0, column=1, padx=(8, 0))
@@ -218,14 +218,21 @@ Windows .exe, or macOS .app and use these exact filenames:
 The first two files are required for lookup. All three are required by the NYC
 filtering option.
 
-NYC AOR FILTER
+NYC ARREST-COHORT FILTER
 
-Keep NYC AOR Rows Only permanently overwrites all three Parquet files. It keeps
-only rows whose relevant AOR column exactly equals:
+Keep NYC Arrest Cohort permanently overwrites all three Parquet files. It:
+
+  1. Keeps only arrest rows whose apprehension AOR exactly equals:
 
   New York City Area of Responsibility
 
-Download fresh source files first if you may need the complete datasets later.
+  2. Keeps every detention stint for those NYC-arrest identifiers, including
+     transfers to detention centers outside NYC.
+  3. Keeps joined rows associated with NYC-AOR arrests.
+
+If an older version already removed non-NYC detention stints, download a fresh
+original detention-stints-latest.parquet before using this filter. Deleted
+transfers cannot be reconstructed. Keep backups if you may need the full data.
 
 DEPENDENCIES
 
@@ -242,11 +249,12 @@ Homebrew Python, the desktop window also requires:
 
     def confirm_nyc_filter(self) -> None:
         confirmed = messagebox.askyesno(
-            "Keep only NYC AOR rows?",
-            "This will permanently overwrite all three Parquet files and remove "
-            "every row outside the New York City Area of Responsibility.\n\n"
-            "This cannot be undone without downloading the source files again. "
-            "Continue?",
+            "Keep the NYC arrest cohort?",
+            "This permanently overwrites all three Parquet files. It keeps only "
+            "NYC-AOR arrests, but preserves every detention stint for those "
+            "people—including detention centers outside NYC.\n\n"
+            "If an older version already removed non-NYC stints, replace the "
+            "detention file with a fresh original first. Continue?",
             icon=messagebox.WARNING,
             parent=self.root,
         )
@@ -256,12 +264,12 @@ Homebrew Python, the desktop window also requires:
         self.search_button.configure(state=tk.DISABLED)
         self.filter_button.configure(state=tk.DISABLED)
         self.copy_button.configure(state=tk.DISABLED)
-        self.status.configure(text="Filtering and validating all three files…")
+        self.status.configure(text="Building and validating NYC arrest cohort…")
         threading.Thread(target=self.run_nyc_filter, daemon=True).start()
 
     def run_nyc_filter(self) -> None:
         try:
-            results = retain_nyc_aor_rows(PROJECT_DIR)
+            results = retain_nyc_arrest_cohort(PROJECT_DIR)
         except (NYCFilterError, duckdb.Error, OSError) as exc:
             self.root.after(0, self.show_filter_error, str(exc))
             return
@@ -273,15 +281,17 @@ Homebrew Python, the desktop window also requires:
             f"{result.removed_rows:,} removed"
             for result in results
         )
-        self.status.configure(text="NYC AOR filtering complete.")
+        self.status.configure(text="NYC arrest-cohort filtering complete.")
         self.search_button.configure(state=tk.NORMAL)
         self.filter_button.configure(state=tk.NORMAL)
         messagebox.showinfo(
-            "NYC AOR filtering complete", summary, parent=self.root
+            "NYC arrest-cohort filtering complete", summary, parent=self.root
         )
 
     def show_filter_error(self, message: str) -> None:
-        self.status.configure(text="NYC AOR filtering failed; originals unchanged.")
+        self.status.configure(
+            text="NYC arrest-cohort filtering failed; originals unchanged."
+        )
         self.search_button.configure(state=tk.NORMAL)
         self.filter_button.configure(state=tk.NORMAL)
         messagebox.showerror("Filtering failed", message, parent=self.root)

@@ -15,6 +15,11 @@ The in-app NYC filtering tool additionally requires:
 
 - `joined-arrests-detention-stays-latest.parquet`
 
+The filter keeps only NYC-AOR arrests, then retains **all** detention stints for
+those arrest identifiers—including movements to facilities outside NYC. Start
+with fresh original files. An older NYC-stint-filtered detention file cannot
+restore previously removed transfers.
+
 ## Local macOS build
 
 Install Python 3.14 and Tk support, then create the environment:

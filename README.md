@@ -30,8 +30,12 @@ from oldest to most recent. Impossible chronology is preserved and labeled
 `UNKNOWN - CURRENTLY HELD (?)`.
 
 Use **? Help** for in-app instructions and exact file requirements. **Keep NYC
-AOR Rows Only…** validates and then permanently overwrites all three datasets,
-retaining only exact New York City Area of Responsibility rows.
+Arrest Cohort…** retains only NYC-AOR arrests while preserving every detention
+stint for those people, including transfers to facilities outside NYC.
+
+If an earlier application version already removed non-NYC detention stints,
+replace `detention-stints-latest.parquet` with a fresh original before applying
+the revised filter; deleted transfers cannot be recovered from the filtered file.
 
 ## Terminal interface
 
