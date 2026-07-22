@@ -17,6 +17,8 @@ jobs:
         os:
           - windows-latest
           - macos-15
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
 
     runs-on: ${{ matrix.os }}
 
@@ -29,6 +31,12 @@ jobs:
         with:
           python-version: "3.14"
           cache: pip
+
+      - name: Install Linux GUI test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes tk xvfb
 
       - name: Install dependencies
         run: python -m pip install -r requirements.txt -r requirements-build.txt
@@ -55,6 +63,12 @@ jobs:
             throw "Bundled self-test failed with exit code $($process.ExitCode)"
           }
 
+      - name: Test bundled Linux application
+        if: runner.os == 'Linux'
+        run: |
+          dist/NYCDetentionLookup --self-test
+          xvfb-run --auto-servernum dist/NYCDetentionLookup --gui-self-test
+
       - name: Package macOS artifact
         if: runner.os == 'macOS'
         run: |
@@ -68,6 +82,13 @@ jobs:
         run: |
           Compress-Archive -Path "dist\NYCDetentionLookup.exe" `
             -DestinationPath "dist\NYCDetentionLookup-Windows.zip"
+
+      - name: Package Linux artifact
+        if: runner.os == 'Linux'
+        run: |
+          architecture="$(uname -m)"
+          tar -C dist -czf "NYCDetentionLookup-Linux-${architecture}.tar.gz" \
+            NYCDetentionLookup
 
       - name: Upload macOS artifact
         if: runner.os == 'macOS'
@@ -87,3 +108,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Upload Linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: NYCDetentionLookup-Linux-${{ runner.arch }}
+          path: NYCDetentionLookup-Linux-*.tar.gz
+          if-no-files-found: error
+          retention-days: 14

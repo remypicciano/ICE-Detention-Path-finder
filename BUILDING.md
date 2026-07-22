@@ -61,6 +61,26 @@ $process.ExitCode
 An exit code of `0` passes. Then open the `.exe` normally and perform the same
 identifier, timeline, and clipboard checks.
 
+### What to expect on Windows
+
+1. Extract the downloaded ZIP. Do not run the application from inside the ZIP.
+2. Put `NYCDetentionLookup.exe` and the three exactly named Parquet files in one
+   writable folder, such as `Documents\NYCDetentionLookup`.
+3. Double-click `NYCDetentionLookup.exe`.
+4. Because the app is not code-signed, Microsoft Defender SmartScreen may show
+   **Windows protected your PC**. Select **More info**, verify the app name, then
+   select **Run anyway**.
+5. If Windows instead blocks the downloaded file, right-click the ZIP or EXE,
+   choose **Properties**, select **Unblock** near the bottom of the General tab,
+   then select **Apply**.
+6. Defender or another antivirus program may scan a new PyInstaller executable
+   on first launch. The app does not require administrator privileges or an
+   installer.
+
+Keep the app out of `Program Files`: the NYC filtering option needs permission
+to validate and replace the Parquet files beside the executable. A future
+code-signing certificate would reduce SmartScreen warnings.
+
 ## GitHub Actions builds
 
 1. Create a repository and push the source files. Confirm no `.parquet` files
@@ -68,10 +88,57 @@ identifier, timeline, and clipboard checks.
 2. Open the repository's **Actions** tab.
 3. Select **Build desktop applications**.
 4. Select **Run workflow**.
-5. When both jobs pass, open the run and download the macOS and Windows
-   artifacts from its **Artifacts** section.
+5. When all jobs pass, open the run and download the macOS, Windows, or Linux
+   artifact from its **Artifacts** section.
 6. Extract the appropriate ZIP and place the required Parquet files beside the
    resulting `.app` or `.exe`.
 
 The workflow also runs when a tag beginning with `v` is pushed. Artifacts are
 retained for 14 days and contain application code only.
+
+## Chromebook / ChromeOS Linux build
+
+ChromeOS runs this application through its Debian-based Linux development
+environment. In ChromeOS, open **Settings → About ChromeOS → Developers → Linux
+development environment**, then select **Set up**.
+
+In the Chromebook Terminal, identify the processor architecture:
+
+```bash
+uname -m
+```
+
+Download the matching Actions artifact:
+
+- `x86_64`: `NYCDetentionLookup-Linux-X64`
+- `aarch64` or `arm64`: `NYCDetentionLookup-Linux-ARM64`
+
+Move the downloaded archive and the required Parquet files into **Linux files**.
+Then extract and run it:
+
+```bash
+tar -xzf NYCDetentionLookup-Linux-*.tar.gz
+chmod +x NYCDetentionLookup
+./NYCDetentionLookup
+```
+
+The executable and all three exactly named Parquet files must remain in the
+same Linux directory. Managed school or workplace Chromebooks may disable the
+Linux development environment.
+
+On a regular Debian or Ubuntu Linux desktop, the same commands apply. If the
+system is minimal and the window cannot start, install the common Tk/X11 runtime
+libraries:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y tk libx11-6 libxext6 libxrender1 libxft2 libfontconfig1
+```
+
+Useful troubleshooting:
+
+- `Permission denied`: run `chmod +x NYCDetentionLookup` again.
+- `Exec format error`: download the artifact matching `uname -m`.
+- Data file not found: confirm the Parquet names and capitalization exactly.
+- No window appears: confirm Linux GUI applications are supported and that the
+  command is being run inside a graphical Linux/ChromeOS session.

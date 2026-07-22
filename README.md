@@ -42,5 +42,6 @@ python detention_lookup.py
 
 ## Executable builds
 
-See [BUILDING.md](BUILDING.md) for local macOS and Windows builds and the
-GitHub Actions workflow that produces downloadable artifacts for both systems.
+See [BUILDING.md](BUILDING.md) for macOS, Windows, Linux, and Chromebook setup.
+The GitHub Actions workflow produces native x64 and ARM64 Linux artifacts in
+addition to the macOS and Windows applications.

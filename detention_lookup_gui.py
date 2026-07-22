@@ -308,6 +308,13 @@ def main() -> int:
     if "--self-test" in sys.argv:
         bundled_self_test()
         return 0
+    if "--gui-self-test" in sys.argv:
+        bundled_self_test()
+        root = tk.Tk()
+        root.withdraw()
+        root.update_idletasks()
+        root.destroy()
+        return 0
     root = tk.Tk()
     LookupWindow(root)
     root.mainloop()
