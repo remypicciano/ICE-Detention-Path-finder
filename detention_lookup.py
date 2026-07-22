@@ -28,6 +28,16 @@ class ArrestEvent:
     location: str | None
 
 
+def override_arrest_location(
+    arrest: ArrestEvent, manual_location: str
+) -> ArrestEvent:
+    """Return an arrest event with an optional presentation-only location."""
+    cleaned_location = " ".join(manual_location.split())
+    if not cleaned_location:
+        return arrest
+    return ArrestEvent(arrest.date_time, arrest.date_only, cleaned_location)
+
+
 def normalize_identifier(value: str) -> str:
     """Return the base identifier before an optional underscore suffix."""
     identifier = value.strip().split("_", maxsplit=1)[0]

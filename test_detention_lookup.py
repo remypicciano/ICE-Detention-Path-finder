@@ -12,6 +12,7 @@ from detention_lookup import (
     format_timeline,
     format_timestamp,
     normalize_identifier,
+    override_arrest_location,
 )
 from nyc_filter import sql_literal
 
@@ -24,6 +25,16 @@ def test_normalize_identifier_accepts_base_and_suffixed_values() -> None:
 def test_normalize_identifier_rejects_empty_input() -> None:
     with pytest.raises(LookupError):
         normalize_identifier("  ")
+
+
+def test_override_arrest_location_is_optional_and_presentation_only() -> None:
+    arrest = ArrestEvent(None, None, "Original Place")
+
+    assert override_arrest_location(arrest, "  More Precise Place  ").location == (
+        "More Precise Place"
+    )
+    assert override_arrest_location(arrest, "  ") is arrest
+    assert arrest.location == "Original Place"
 
 
 def test_format_timestamp_converts_to_utc() -> None:

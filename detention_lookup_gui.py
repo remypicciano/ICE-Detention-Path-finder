@@ -12,11 +12,16 @@ from tkinter.scrolledtext import ScrolledText
 
 import duckdb
 
-from detention_lookup import LookupError, fetch_timeline, format_full_timeline
+from detention_lookup import (
+    LookupError,
+    fetch_timeline,
+    format_full_timeline,
+    override_arrest_location,
+)
 from nyc_filter import NYCFilterError, FilterResult, retain_nyc_arrest_cohort
 
 
-APP_VERSION = "1.1"
+APP_VERSION = "1.2"
 
 
 def application_directory() -> Path:
@@ -40,14 +45,14 @@ class LookupWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(f"NYC Detention Lookup v{APP_VERSION}")
-        self.root.minsize(720, 500)
+        self.root.minsize(720, 570)
 
         container = ttk.Frame(root, padding=16)
         container.grid(row=0, column=0, sticky="nsew")
         root.rowconfigure(0, weight=1)
         root.columnconfigure(0, weight=1)
         container.columnconfigure(0, weight=1)
-        container.rowconfigure(6, weight=1)
+        container.rowconfigure(9, weight=1)
 
         toolbar = ttk.Frame(container)
         toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
@@ -71,7 +76,6 @@ class LookupWindow:
         ttk.Label(
             container,
             text=(
-                '"I was in a place where the world didn\'t happen"\n'
                 '"Get that fish a lawyer"'
             ),
             font=("TkDefaultFont", 22, "italic"),
@@ -102,8 +106,25 @@ class LookupWindow:
             foreground="#555555",
         ).grid(row=4, column=0, sticky="w", pady=(0, 12))
 
-        ttk.Label(container, text="Detention timeline").grid(
+        ttk.Label(container, text="Manual arrest location (optional)").grid(
             row=5, column=0, sticky="w"
+        )
+
+        self.manual_location_entry = ttk.Entry(container)
+        self.manual_location_entry.grid(
+            row=6, column=0, sticky="ew", pady=(5, 4)
+        )
+        ttk.Label(
+            container,
+            text=(
+                "Overrides the arrest location in the displayed timeline only; "
+                "source data is not changed."
+            ),
+            foreground="#555555",
+        ).grid(row=7, column=0, sticky="w", pady=(0, 12))
+
+        ttk.Label(container, text="Detention timeline (editable)").grid(
+            row=8, column=0, sticky="w"
         )
 
         self.result_box = ScrolledText(
@@ -114,11 +135,11 @@ class LookupWindow:
             padx=8,
             pady=8,
         )
-        self.result_box.grid(row=6, column=0, sticky="nsew", pady=(5, 12))
+        self.result_box.grid(row=9, column=0, sticky="nsew", pady=(5, 12))
         self.result_box.configure(state=tk.DISABLED)
 
         footer = ttk.Frame(container)
-        footer.grid(row=7, column=0, sticky="ew")
+        footer.grid(row=10, column=0, sticky="ew")
         footer.columnconfigure(0, weight=1)
 
         self.status = ttk.Label(footer, text="Paste an identifier and select Search.")
@@ -134,14 +155,16 @@ class LookupWindow:
 
         self.identifier_entry.focus_set()
 
-    def set_result(self, value: str) -> None:
+    def set_result(self, value: str, *, editable: bool = False) -> None:
         self.result_box.configure(state=tk.NORMAL)
         self.result_box.delete("1.0", tk.END)
         self.result_box.insert("1.0", value)
-        self.result_box.configure(state=tk.DISABLED)
+        if not editable:
+            self.result_box.configure(state=tk.DISABLED)
 
     def start_search(self, _event: tk.Event | None = None) -> None:
         identifier = self.identifier_entry.get().strip()
+        manual_location = self.manual_location_entry.get()
         if not identifier:
             self.set_result("")
             self.status.configure(text="Enter an identifier first.")
@@ -155,11 +178,11 @@ class LookupWindow:
         self.set_result("")
         threading.Thread(
             target=self.run_search,
-            args=(identifier,),
+            args=(identifier, manual_location),
             daemon=True,
         ).start()
 
-    def run_search(self, identifier: str) -> None:
+    def run_search(self, identifier: str, manual_location: str) -> None:
         try:
             _base_identifier, arrest, rows = fetch_timeline(
                 identifier,
@@ -167,6 +190,7 @@ class LookupWindow:
                 detention_file=DETENTION_FILE,
                 facilities_file=FACILITIES_FILE,
             )
+            arrest = override_arrest_location(arrest, manual_location)
             result = format_full_timeline(arrest, rows)
         except (LookupError, duckdb.Error) as exc:
             self.root.after(0, self.show_error, str(exc))
@@ -174,8 +198,10 @@ class LookupWindow:
         self.root.after(0, self.show_result, result, len(rows))
 
     def show_result(self, result: str, row_count: int) -> None:
-        self.set_result(result)
-        self.status.configure(text=f"Found {row_count} detention row(s).")
+        self.set_result(result, editable=True)
+        self.status.configure(
+            text=f"Found {row_count} detention row(s). Edit the timeline if needed."
+        )
         self.search_button.configure(state=tk.NORMAL)
         self.filter_button.configure(state=tk.NORMAL)
         self.copy_button.configure(state=tk.NORMAL)
@@ -211,10 +237,14 @@ class LookupWindow:
             """HOW TO SEARCH
 
 1. Paste a unique_identifier, stay_ID, or stint_ID into the input field.
-2. Select Search or press Return.
-3. The program requires exactly one matching arrest row, then finds every
+2. Optionally enter a more precise arrest location. This changes only the
+displayed result, not the source Parquet file.
+3. Select Search or press Return.
+4. The program requires exactly one matching arrest row, then finds every
 matching detention row and orders those rows by book-in time.
-4. Select Copy to Clipboard to copy the complete timeline string.
+5. Edit the generated timeline directly if you need to add or correct other
+manual details.
+6. Select Copy to Clipboard to copy the text currently shown in the timeline.
 
 The timeline begins with the arrest date and location, then moves from the
 oldest detention event to the most recent. Impossible chronology is retained

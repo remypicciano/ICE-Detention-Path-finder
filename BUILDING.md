@@ -52,12 +52,12 @@ Check the Mac processor in Terminal:
 uname -m
 ```
 
-- `arm64`: download `NYCDetentionLookup-v1.1-macOS-ARM64` (Apple Silicon).
-- `x86_64`: download `NYCDetentionLookup-v1.1-macOS-X64` (Intel).
+- `arm64`: download `NYCDetentionLookup-v1.2-macOS-ARM64` (Apple Silicon).
+- `x86_64`: download `NYCDetentionLookup-v1.2-macOS-X64` (Intel).
 
 GitHub downloads an outer artifact ZIP containing a second, macOS-preserving
 ZIP. Extract the outer ZIP, then extract the inner
-`NYCDetentionLookup-v1.1-macOS-*.zip` before opening the `.app`. The inner ZIP is
+`NYCDetentionLookup-v1.2-macOS-*.zip` before opening the `.app`. The inner ZIP is
 important because it preserves the app bundle and executable permissions.
 
 On first launch, Control-click the extracted app and choose **Open**. If macOS
@@ -156,14 +156,14 @@ uname -m
 
 Download the matching Actions artifact:
 
-- `x86_64`: `NYCDetentionLookup-v1.1-Linux-X64`
-- `aarch64` or `arm64`: `NYCDetentionLookup-v1.1-Linux-ARM64`
+- `x86_64`: `NYCDetentionLookup-v1.2-Linux-X64`
+- `aarch64` or `arm64`: `NYCDetentionLookup-v1.2-Linux-ARM64`
 
 Move the downloaded archive and the required Parquet files into **Linux files**.
 Then extract and run it:
 
 ```bash
-tar -xzf NYCDetentionLookup-v1.1-Linux-*.tar.gz
+tar -xzf NYCDetentionLookup-v1.2-Linux-*.tar.gz
 chmod +x NYCDetentionLookup
 ./NYCDetentionLookup
 ```

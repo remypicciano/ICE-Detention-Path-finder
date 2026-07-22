@@ -1,4 +1,4 @@
-# NYC detention lookup v1.1
+# NYC detention lookup v1.2
 
 ## Environment
 
@@ -37,6 +37,11 @@ arrest date, arrest location-> [Book-in: date/time][Book-out: date/time], facili
 
 Detention locations use `facilities-latest.parquet` to display the canonical
 facility name and code, such as `Delaney Hall Detention Facility:DHDFNJ`.
+
+The GUI also accepts an optional, more precise manual arrest location. This
+overrides only the displayed timeline and never edits the source Parquet file.
+After a successful search, the timeline text is editable before using **Copy to
+Clipboard**.
 
 Use **? Help** for in-app instructions and exact file requirements. **Keep NYC
 Arrest Cohort…** retains only NYC-AOR arrests while preserving every detention
