@@ -1,0 +1,89 @@
+name: Build desktop applications
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-15
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Verify Tk and run tests
+        run: |
+          python -c "import tkinter; print('Tk', tkinter.TkVersion)"
+          python -m pytest -q
+
+      - name: Build application
+        run: python -m PyInstaller --noconfirm --clean NYCDetentionLookup.spec
+
+      - name: Test bundled macOS application
+        if: runner.os == 'macOS'
+        run: dist/NYCDetentionLookup.app/Contents/MacOS/NYCDetentionLookup --self-test
+
+      - name: Test bundled Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath "dist\NYCDetentionLookup.exe" `
+            -ArgumentList "--self-test" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Bundled self-test failed with exit code $($process.ExitCode)"
+          }
+
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/NYCDetentionLookup.app \
+            dist/NYCDetentionLookup-macOS.zip
+
+      - name: Package Windows artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\NYCDetentionLookup.exe" `
+            -DestinationPath "dist\NYCDetentionLookup-Windows.zip"
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: NYCDetentionLookup-macOS
+          path: dist/NYCDetentionLookup-macOS.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: NYCDetentionLookup-Windows
+          path: dist/NYCDetentionLookup-Windows.zip
+          if-no-files-found: error
+          retention-days: 14
+

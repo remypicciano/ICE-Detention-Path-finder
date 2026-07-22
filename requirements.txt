@@ -1,0 +1,6 @@
+# Direct project dependencies. Update these pins deliberately.
+# Native GUI prerequisite on macOS: brew install python-tk@3.14
+duckdb==1.5.4
+pyarrow==25.0.0
+pytz==2026.2
+pytest==9.1.1
