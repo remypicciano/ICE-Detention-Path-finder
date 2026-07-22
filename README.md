@@ -48,4 +48,4 @@ python detention_lookup.py
 
 See [BUILDING.md](BUILDING.md) for macOS, Windows, Linux, and Chromebook setup.
 The GitHub Actions workflow produces native x64 and ARM64 Linux artifacts in
-addition to the macOS and Windows applications.
+addition to Windows and separate Apple Silicon and Intel macOS applications.

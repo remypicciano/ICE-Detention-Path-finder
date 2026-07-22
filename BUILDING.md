@@ -43,6 +43,46 @@ Open `dist/NYCDetentionLookup.app`, paste a known valid identifier, verify its
 timeline, and test Copy to Clipboard. An unsigned app may require Control-click,
 Open on first launch.
 
+### Choosing and opening the macOS artifact
+
+Check the Mac processor in Terminal:
+
+```bash
+uname -m
+```
+
+- `arm64`: download `NYCDetentionLookup-macOS-ARM64` (Apple Silicon).
+- `x86_64`: download `NYCDetentionLookup-macOS-X64` (Intel).
+
+GitHub downloads an outer artifact ZIP containing a second, macOS-preserving
+ZIP. Extract the outer ZIP, then extract the inner
+`NYCDetentionLookup-macOS-*.zip` before opening the `.app`. The inner ZIP is
+important because it preserves the app bundle and executable permissions.
+
+On first launch, Control-click the extracted app and choose **Open**. If macOS
+still blocks it, open **System Settings → Privacy & Security**, find the blocked
+app notice, and select **Open Anyway**. If macOS says the application cannot be
+opened rather than showing a security warning:
+
+1. Confirm that the downloaded architecture matches `uname -m`.
+2. Extract both ZIP layers again with Archive Utility.
+3. Confirm the executable permission:
+
+   ```bash
+   chmod +x NYCDetentionLookup.app/Contents/MacOS/NYCDetentionLookup
+   ```
+
+4. For an app downloaded from your own trusted repository, clear its quarantine
+   attribute if necessary:
+
+   ```bash
+   xattr -dr com.apple.quarantine NYCDetentionLookup.app
+   ```
+
+Then Control-click and choose **Open** again. Formal Apple code signing and
+notarization would eliminate most of this friction but requires an Apple
+Developer identity.
+
 ## Local Windows build
 
 Install 64-bit Python 3.14 from python.org with Tcl/Tk enabled. In PowerShell:
@@ -93,8 +133,8 @@ code-signing certificate would reduce SmartScreen warnings.
 2. Open the repository's **Actions** tab.
 3. Select **Build desktop applications**.
 4. Select **Run workflow**.
-5. When all jobs pass, open the run and download the macOS, Windows, or Linux
-   artifact from its **Artifacts** section.
+5. When all jobs pass, open the run and download the architecture-matched
+   macOS, Windows, or Linux artifact from its **Artifacts** section.
 6. Extract the appropriate ZIP and place the required Parquet files beside the
    resulting `.app` or `.exe`.
 

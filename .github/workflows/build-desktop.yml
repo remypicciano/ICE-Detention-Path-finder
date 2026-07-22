@@ -17,6 +17,7 @@ jobs:
         os:
           - windows-latest
           - macos-15
+          - macos-15-intel
           - ubuntu-22.04
           - ubuntu-22.04-arm
 
@@ -74,7 +75,7 @@ jobs:
         run: |
           ditto -c -k --sequesterRsrc --keepParent \
             dist/NYCDetentionLookup.app \
-            dist/NYCDetentionLookup-macOS.zip
+            dist/NYCDetentionLookup-macOS-${{ runner.arch }}.zip
 
       - name: Package Windows artifact
         if: runner.os == 'Windows'
@@ -94,8 +95,8 @@ jobs:
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: NYCDetentionLookup-macOS
-          path: dist/NYCDetentionLookup-macOS.zip
+          name: NYCDetentionLookup-macOS-${{ runner.arch }}
+          path: dist/NYCDetentionLookup-macOS-${{ runner.arch }}.zip
           if-no-files-found: error
           retention-days: 14
 
