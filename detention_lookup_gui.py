@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import tkinter as tk
 import sys
+import uuid
 from pathlib import Path
 from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
@@ -291,6 +292,14 @@ def bundled_self_test() -> None:
     connection = duckdb.connect(database=":memory:")
     try:
         assert connection.execute("SELECT 1").fetchone() == (1,)
+        uuid_value, timestamp_value = connection.execute(
+            """
+            SELECT UUID '12345678-1234-5678-1234-567812345678',
+                   TIMESTAMPTZ '2025-01-01 12:00:00+00'
+            """
+        ).fetchone()
+        assert uuid_value == uuid.UUID("12345678-1234-5678-1234-567812345678")
+        assert timestamp_value.tzinfo is not None
     finally:
         connection.close()
 
