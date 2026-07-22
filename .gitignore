@@ -8,3 +8,7 @@ dist/
 *.parquet.*
 .DS_Store
 *.app/
+.codex/
+.agents/
+.claude/
+.cursor/
