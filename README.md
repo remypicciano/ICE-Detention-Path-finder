@@ -1,4 +1,4 @@
-# NYC detention lookup
+# NYC detention lookup v1.1
 
 ## Environment
 
@@ -28,6 +28,15 @@ Results begin with the arrest date and location, followed by detention events
 from oldest to most recent. Impossible chronology is preserved and labeled
 `(DISCREPANCY: ...)`; a missing book-out date is labeled
 `UNKNOWN - CURRENTLY HELD (?)`.
+
+The output format is:
+
+```text
+arrest date, arrest location-> [Book-in: date/time][Book-out: date/time], facility:code -> next facility
+```
+
+Detention locations use `facilities-latest.parquet` to display the canonical
+facility name and code, such as `Delaney Hall Detention Facility:DHDFNJ`.
 
 Use **? Help** for in-app instructions and exact file requirements. **Keep NYC
 Arrest Cohort…** retains only NYC-AOR arrests while preserving every detention

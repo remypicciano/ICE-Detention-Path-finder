@@ -48,6 +48,17 @@ def write_test_files(directory) -> None:
         (FORMAT PARQUET)
         """
     )
+    connection.execute(
+        f"""
+        COPY (
+            SELECT * FROM (VALUES
+                ('NYC', 'NYC Center', 'NY'),
+                ('OUTSIDE', 'Out-of-NYC Center', 'TX')
+            ) AS rows(detention_facility_code, name, state)
+        ) TO {sql_literal(str(directory / 'facilities-latest.parquet'))}
+        (FORMAT PARQUET)
+        """
+    )
     connection.close()
 
 
@@ -56,8 +67,9 @@ def test_filter_keeps_every_stint_for_nyc_arrest_identifiers(tmp_path) -> None:
 
     results = retain_nyc_arrest_cohort(tmp_path)
 
-    assert len(results) == 3
-    assert [result.retained_rows for result in results] == [2, 2, 2]
+    assert len(results) == 4
+    assert [result.retained_rows for result in results] == [2, 2, 2, 2]
+    assert results[-1].removed_rows == 0
 
     connection = duckdb.connect()
     arrest_aors = connection.execute(
@@ -76,10 +88,15 @@ def test_filter_keeps_every_stint_for_nyc_arrest_identifiers(tmp_path) -> None:
         "SELECT DISTINCT apprehension_aor FROM read_parquet(?)",
         [str(tmp_path / "joined-arrests-detention-stays-latest.parquet")],
     ).fetchall()
+    facilities = connection.execute(
+        "SELECT detention_facility_code, state FROM read_parquet(?) ORDER BY 1",
+        [str(tmp_path / "facilities-latest.parquet")],
+    ).fetchall()
     connection.close()
 
     assert arrest_aors == [(NYC_AOR,)]
     assert joined_aors == [(NYC_AOR,)]
+    assert facilities == [("NYC", "NY"), ("OUTSIDE", "TX")]
     assert detention_rows == [
         ("nyc-person", NYC_AOR, "NYC Center"),
         ("nyc-person", "Another Area", "Out-of-NYC Center"),

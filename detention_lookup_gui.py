@@ -16,6 +16,9 @@ from detention_lookup import LookupError, fetch_timeline, format_full_timeline
 from nyc_filter import NYCFilterError, FilterResult, retain_nyc_arrest_cohort
 
 
+APP_VERSION = "1.1"
+
+
 def application_directory() -> Path:
     """Locate external data beside the script, Windows exe, or macOS app."""
     if not getattr(sys, "frozen", False):
@@ -30,12 +33,13 @@ def application_directory() -> Path:
 PROJECT_DIR = application_directory()
 ARRESTS_FILE = PROJECT_DIR / "arrests-latest.parquet"
 DETENTION_FILE = PROJECT_DIR / "detention-stints-latest.parquet"
+FACILITIES_FILE = PROJECT_DIR / "facilities-latest.parquet"
 
 
 class LookupWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("NYC Detention Lookup")
+        self.root.title(f"NYC Detention Lookup v{APP_VERSION}")
         self.root.minsize(720, 390)
 
         container = ttk.Frame(root, padding=16)
@@ -49,9 +53,11 @@ class LookupWindow:
         toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         toolbar.columnconfigure(0, weight=1)
 
-        ttk.Label(toolbar, text="NYC Detention Lookup", font=("TkDefaultFont", 15)).grid(
-            row=0, column=0, sticky="w"
-        )
+        ttk.Label(
+            toolbar,
+            text=f"NYC Detention Lookup v{APP_VERSION}",
+            font=("TkDefaultFont", 15),
+        ).grid(row=0, column=0, sticky="w")
         self.filter_button = ttk.Button(
             toolbar,
             text="Keep NYC Arrest Cohort…",
@@ -148,6 +154,7 @@ class LookupWindow:
                 identifier,
                 arrests_file=ARRESTS_FILE,
                 detention_file=DETENTION_FILE,
+                facilities_file=FACILITIES_FILE,
             )
             result = format_full_timeline(arrest, rows)
         except (LookupError, duckdb.Error) as exc:
@@ -203,6 +210,11 @@ oldest detention event to the most recent. Impossible chronology is retained
 but marked with a (DISCREPANCY: ...) note. A missing book-out date appears as
 UNKNOWN - CURRENTLY HELD (?) because the data cannot confirm release.
 
+Output format:
+
+  arrest date, arrest location-> [Book-in: date/time][Book-out: date/time],
+  facility:code -> next facility
+
 Values after the first underscore are ignored. This lets a stay_ID or stint_ID
 be reduced to its base unique_identifier.
 
@@ -214,13 +226,15 @@ Windows .exe, or macOS .app and use these exact filenames:
   arrests-latest.parquet
   detention-stints-latest.parquet
   joined-arrests-detention-stays-latest.parquet
+  facilities-latest.parquet
 
-The first two files are required for lookup. All three are required by the NYC
-filtering option.
+The arrests, detention-stints, and facilities files are required for lookup.
+All four files are required by the NYC filtering option.
 
 NYC ARREST-COHORT FILTER
 
-Keep NYC Arrest Cohort permanently overwrites all three Parquet files. It:
+Keep NYC Arrest Cohort rewrites the arrests, detention, and joined Parquet
+files. It does not rewrite the facilities table. It:
 
   1. Keeps only arrest rows whose apprehension AOR exactly equals:
 
@@ -229,6 +243,8 @@ Keep NYC Arrest Cohort permanently overwrites all three Parquet files. It:
   2. Keeps every detention stint for those NYC-arrest identifiers, including
      transfers to detention centers outside NYC.
   3. Keeps joined rows associated with NYC-AOR arrests.
+  4. Leaves every row in facilities-latest.parquet unchanged so detention
+     centers outside NYC remain available for names and codes.
 
 If an older version already removed non-NYC detention stints, download a fresh
 original detention-stints-latest.parquet before using this filter. Deleted
@@ -250,9 +266,10 @@ Homebrew Python, the desktop window also requires:
     def confirm_nyc_filter(self) -> None:
         confirmed = messagebox.askyesno(
             "Keep the NYC arrest cohort?",
-            "This permanently overwrites all three Parquet files. It keeps only "
-            "NYC-AOR arrests, but preserves every detention stint for those "
-            "people—including detention centers outside NYC.\n\n"
+            "This permanently overwrites the arrests, detention, and joined "
+            "Parquet files. The facilities table remains unchanged. It keeps "
+            "only NYC-AOR arrests, but preserves every detention stint for "
+            "those people—including detention centers outside NYC.\n\n"
             "If an older version already removed non-NYC stints, replace the "
             "detention file with a fresh original first. Continue?",
             icon=messagebox.WARNING,

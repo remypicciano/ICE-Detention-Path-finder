@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  APP_VERSION: "1.1"
+
 jobs:
   build:
     strategy:
@@ -75,28 +78,28 @@ jobs:
         run: |
           ditto -c -k --sequesterRsrc --keepParent \
             dist/NYCDetentionLookup.app \
-            dist/NYCDetentionLookup-macOS-${{ runner.arch }}.zip
+            dist/NYCDetentionLookup-v${{ env.APP_VERSION }}-macOS-${{ runner.arch }}.zip
 
       - name: Package Windows artifact
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           Compress-Archive -Path "dist\NYCDetentionLookup.exe" `
-            -DestinationPath "dist\NYCDetentionLookup-Windows.zip"
+            -DestinationPath "dist\NYCDetentionLookup-v${{ env.APP_VERSION }}-Windows.zip"
 
       - name: Package Linux artifact
         if: runner.os == 'Linux'
         run: |
           architecture="$(uname -m)"
-          tar -C dist -czf "NYCDetentionLookup-Linux-${architecture}.tar.gz" \
+          tar -C dist -czf "NYCDetentionLookup-v${{ env.APP_VERSION }}-Linux-${architecture}.tar.gz" \
             NYCDetentionLookup
 
       - name: Upload macOS artifact
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: NYCDetentionLookup-macOS-${{ runner.arch }}
-          path: dist/NYCDetentionLookup-macOS-${{ runner.arch }}.zip
+          name: NYCDetentionLookup-v${{ env.APP_VERSION }}-macOS-${{ runner.arch }}
+          path: dist/NYCDetentionLookup-v${{ env.APP_VERSION }}-macOS-${{ runner.arch }}.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -104,8 +107,8 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: NYCDetentionLookup-Windows
-          path: dist/NYCDetentionLookup-Windows.zip
+          name: NYCDetentionLookup-v${{ env.APP_VERSION }}-Windows
+          path: dist/NYCDetentionLookup-v${{ env.APP_VERSION }}-Windows.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -113,7 +116,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: NYCDetentionLookup-Linux-${{ runner.arch }}
-          path: NYCDetentionLookup-Linux-*.tar.gz
+          name: NYCDetentionLookup-v${{ env.APP_VERSION }}-Linux-${{ runner.arch }}
+          path: NYCDetentionLookup-v${{ env.APP_VERSION }}-Linux-*.tar.gz
           if-no-files-found: error
           retention-days: 14

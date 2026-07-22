@@ -14,6 +14,7 @@ import duckdb
 
 DEFAULT_ARRESTS_FILE = Path("arrests-latest.parquet")
 DEFAULT_DETENTION_FILE = Path("detention-stints-latest.parquet")
+DEFAULT_FACILITIES_FILE = Path("facilities-latest.parquet")
 
 
 class LookupError(Exception):
@@ -36,16 +37,16 @@ def normalize_identifier(value: str) -> str:
 
 
 def format_timestamp(value: datetime | None, event_label: str) -> str:
-    """Format a timestamp in UTC without relying on the machine timezone."""
+    """Format a timestamp in UTC without adding an event label."""
     if value is None:
         if event_label == "book-out":
-            return "UNKNOWN - CURRENTLY HELD (?) (book-out)"
-        return f"UNKNOWN UTC ({event_label})"
+            return "UNKNOWN - CURRENTLY HELD (?)"
+        return "UNKNOWN UTC"
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     else:
         value = value.astimezone(timezone.utc)
-    return f"{value:%Y-%m-%d %H:%M:%S} UTC ({event_label})"
+    return f"{value:%Y-%m-%d %H:%M:%S} UTC"
 
 
 def clean_location(value: str | None) -> str:
@@ -75,6 +76,7 @@ def fetch_timeline(
     identifier_input: str,
     arrests_file: Path = DEFAULT_ARRESTS_FILE,
     detention_file: Path = DEFAULT_DETENTION_FILE,
+    facilities_file: Path = DEFAULT_FACILITIES_FILE,
 ) -> tuple[
     str,
     ArrestEvent,
@@ -84,6 +86,7 @@ def fetch_timeline(
     identifier = normalize_identifier(identifier_input)
     validate_file(arrests_file, "arrests")
     validate_file(detention_file, "detention")
+    validate_file(facilities_file, "facilities")
 
     connection = duckdb.connect(database=":memory:")
     connection.execute("SET TimeZone = 'UTC'")
@@ -118,15 +121,39 @@ def fetch_timeline(
 
         rows = connection.execute(
             """
-            SELECT book_in_date_time, detention_facility, book_out_date_time
-            FROM read_parquet(?)
-            WHERE unique_identifier = ?
-            ORDER BY book_in_date_time NULLS LAST,
-                     book_out_date_time NULLS LAST,
-                     detention_facility NULLS LAST,
-                     row_original NULLS LAST
+            SELECT d.book_in_date_time,
+                   CASE
+                       WHEN d.detention_facility_code IS NOT NULL THEN
+                           concat(
+                               coalesce(
+                                   nullif(trim(f.name), ''),
+                                   nullif(trim(d.detention_facility), ''),
+                                   'UNKNOWN DETENTION CENTER'
+                               ),
+                               ':',
+                               d.detention_facility_code
+                           )
+                       ELSE coalesce(
+                           nullif(trim(f.name), ''),
+                           nullif(trim(d.detention_facility), ''),
+                           'UNKNOWN DETENTION CENTER'
+                       )
+                   END AS facility_display,
+                   d.book_out_date_time
+            FROM read_parquet(?) d
+            LEFT JOIN (
+                SELECT detention_facility_code, max(name) AS name
+                FROM read_parquet(?)
+                WHERE detention_facility_code IS NOT NULL
+                GROUP BY detention_facility_code
+            ) f USING (detention_facility_code)
+            WHERE d.unique_identifier = ?
+            ORDER BY d.book_in_date_time NULLS LAST,
+                     d.book_out_date_time NULLS LAST,
+                     facility_display NULLS LAST,
+                     d.row_original NULLS LAST
             """,
-            [str(detention_file), identifier],
+            [str(detention_file), str(facilities_file), identifier],
         ).fetchall()
     finally:
         connection.close()
@@ -150,12 +177,10 @@ def format_timeline(
             if utc_datetime(book_in) < utc_datetime(previous_book_out):
                 warnings.append("detention begins before previous book-out")
 
-        segment = ", ".join(
-            (
-                format_timestamp(book_in, "book-in"),
-                clean_location(location),
-                format_timestamp(book_out, "book-out"),
-            )
+        segment = (
+            f"[Book-in: {format_timestamp(book_in, 'book-in')}]"
+            f"[Book-out: {format_timestamp(book_out, 'book-out')}], "
+            f"{clean_location(location)}"
         )
         if warnings:
             warning_text = "; ".join(warnings)
@@ -187,16 +212,16 @@ def format_full_timeline(
     if arrest.date_time is not None:
         arrest_date = format_timestamp(arrest.date_time, "arrest")
     elif arrest.date_only is not None:
-        arrest_date = f"{arrest.date_only:%Y-%m-%d} (arrest)"
+        arrest_date = f"{arrest.date_only:%Y-%m-%d}"
     else:
-        arrest_date = "UNKNOWN (arrest)"
+        arrest_date = "UNKNOWN ARREST DATE"
 
     arrest_segment = f"{arrest_date}, {clean_arrest_location(arrest.location)}"
     if warnings:
         arrest_segment = (
             f"(DISCREPANCY: {'; '.join(warnings)}) {arrest_segment}"
         )
-    return f"{arrest_segment} -> {format_timeline(rows)}"
+    return f"{arrest_segment}-> {format_timeline(rows)}"
 
 
 def parse_args() -> argparse.Namespace:
@@ -223,6 +248,12 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_DETENTION_FILE,
         help=f"detention Parquet path (default: {DEFAULT_DETENTION_FILE})",
     )
+    parser.add_argument(
+        "--facilities-file",
+        type=Path,
+        default=DEFAULT_FACILITIES_FILE,
+        help=f"facilities Parquet path (default: {DEFAULT_FACILITIES_FILE})",
+    )
     args = parser.parse_args()
     if args.identifier is None:
         args.identifier = input("Enter the unique identifier to search for: ").strip()
@@ -236,6 +267,7 @@ def main() -> int:
             args.identifier,
             arrests_file=args.arrests_file,
             detention_file=args.detention_file,
+            facilities_file=args.facilities_file,
         )
     except (LookupError, duckdb.Error) as exc:
         print(f"Lookup failed: {exc}", file=sys.stderr)

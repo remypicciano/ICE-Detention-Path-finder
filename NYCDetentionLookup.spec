@@ -50,6 +50,8 @@ if sys.platform == "darwin":
         bundle_identifier="org.local.nycdetentionlookup",
         info_plist={
             "CFBundleDisplayName": "NYC Detention Lookup",
+            "CFBundleShortVersionString": "1.1",
+            "CFBundleVersion": "1.1.0",
             "NSHighResolutionCapable": True,
         },
     )
@@ -67,4 +69,5 @@ else:
         upx=False,
         console=False,
         disable_windowed_traceback=False,
+        version="version_info.txt" if sys.platform == "win32" else None,
     )

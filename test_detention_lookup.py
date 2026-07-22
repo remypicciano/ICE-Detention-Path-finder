@@ -29,9 +29,7 @@ def test_normalize_identifier_rejects_empty_input() -> None:
 def test_format_timestamp_converts_to_utc() -> None:
     eastern = timezone(timedelta(hours=-5))
     value = datetime(2024, 1, 2, 10, 30, 45, tzinfo=eastern)
-    assert format_timestamp(value, "book-in") == (
-        "2024-01-02 15:30:45 UTC (book-in)"
-    )
+    assert format_timestamp(value, "book-in") == "2024-01-02 15:30:45 UTC"
 
 
 def test_format_timeline_keeps_each_row_as_a_segment() -> None:
@@ -51,7 +49,7 @@ def test_format_timeline_keeps_each_row_as_a_segment() -> None:
     assert "Center A" in result
     assert " -> " in result
     assert "Center B" in result
-    assert result.endswith("UNKNOWN - CURRENTLY HELD (?) (book-out)")
+    assert "[Book-out: UNKNOWN - CURRENTLY HELD (?)], Center B" in result
 
 
 def test_clean_location_removes_line_breaks() -> None:
@@ -62,6 +60,7 @@ def test_clean_location_removes_line_breaks() -> None:
 def test_fetch_timeline_orders_oldest_to_most_recent_with_locations(tmp_path) -> None:
     arrests_file = tmp_path / "arrests.parquet"
     detention_file = tmp_path / "detention.parquet"
+    facilities_file = tmp_path / "facilities.parquet"
     connection = duckdb.connect()
     connection.execute(
         f"""
@@ -81,30 +80,53 @@ def test_fetch_timeline_orders_oldest_to_most_recent_with_locations(tmp_path) ->
         COPY (
             SELECT * FROM (VALUES
                 ('person-1', TIMESTAMPTZ '2025-02-01 09:00:00+00',
-                 'Recent Center', TIMESTAMPTZ '2025-02-02 09:00:00+00', 2),
+                 'Unmapped Recent Name', 'RECENT',
+                 TIMESTAMPTZ '2025-02-02 09:00:00+00', 2),
                 ('person-1', TIMESTAMPTZ '2024-01-01 08:00:00+00',
-                 'Old Center', TIMESTAMPTZ '2024-01-03 08:00:00+00', 1)
+                 'Unmapped Old Name', 'OLD',
+                 TIMESTAMPTZ '2024-01-03 08:00:00+00', 1)
             ) AS rows(
                 unique_identifier,
                 book_in_date_time,
                 detention_facility,
+                detention_facility_code,
                 book_out_date_time,
                 row_original
             )
         ) TO {sql_literal(str(detention_file))} (FORMAT PARQUET)
         """
     )
+    connection.execute(
+        f"""
+        COPY (
+            SELECT * FROM (VALUES
+                ('OLD', 'Old Center'),
+                ('RECENT', 'Recent Center')
+            ) AS rows(detention_facility_code, name)
+        ) TO {sql_literal(str(facilities_file))} (FORMAT PARQUET)
+        """
+    )
     connection.close()
 
     _identifier, arrest, rows = fetch_timeline(
-        "person-1", arrests_file=arrests_file, detention_file=detention_file
+        "person-1",
+        arrests_file=arrests_file,
+        detention_file=detention_file,
+        facilities_file=facilities_file,
     )
 
-    assert rows[0][1] == "Old Center"
-    assert rows[1][1] == "Recent Center"
+    assert rows[0][1] == "Old Center:OLD"
+    assert rows[1][1] == "Recent Center:RECENT"
     timeline = format_full_timeline(arrest, rows)
-    assert timeline.startswith("2023-12-31 18:00:00 UTC (arrest), Arrest Place ->")
-    assert timeline.index("Old Center") < timeline.index("Recent Center")
+    assert timeline.startswith("2023-12-31 18:00:00 UTC, Arrest Place->")
+    assert (
+        "[Book-in: 2024-01-01 08:00:00 UTC]"
+        "[Book-out: 2024-01-03 08:00:00 UTC], "
+        "Old Center:OLD"
+    ) in timeline
+    assert timeline.index("Old Center:OLD") < timeline.index(
+        "Recent Center:RECENT"
+    )
 
 
 def test_format_full_timeline_marks_impossible_arrest_chronology() -> None:

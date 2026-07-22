@@ -10,6 +10,7 @@ For normal lookup, place these files beside the `.app` or `.exe`:
 
 - `arrests-latest.parquet`
 - `detention-stints-latest.parquet`
+- `facilities-latest.parquet`
 
 The in-app NYC filtering tool additionally requires:
 
@@ -51,12 +52,12 @@ Check the Mac processor in Terminal:
 uname -m
 ```
 
-- `arm64`: download `NYCDetentionLookup-macOS-ARM64` (Apple Silicon).
-- `x86_64`: download `NYCDetentionLookup-macOS-X64` (Intel).
+- `arm64`: download `NYCDetentionLookup-v1.1-macOS-ARM64` (Apple Silicon).
+- `x86_64`: download `NYCDetentionLookup-v1.1-macOS-X64` (Intel).
 
 GitHub downloads an outer artifact ZIP containing a second, macOS-preserving
 ZIP. Extract the outer ZIP, then extract the inner
-`NYCDetentionLookup-macOS-*.zip` before opening the `.app`. The inner ZIP is
+`NYCDetentionLookup-v1.1-macOS-*.zip` before opening the `.app`. The inner ZIP is
 important because it preserves the app bundle and executable permissions.
 
 On first launch, Control-click the extracted app and choose **Open**. If macOS
@@ -109,7 +110,7 @@ identifier, timeline, and clipboard checks.
 ### What to expect on Windows
 
 1. Extract the downloaded ZIP. Do not run the application from inside the ZIP.
-2. Put `NYCDetentionLookup.exe` and the three exactly named Parquet files in one
+2. Put `NYCDetentionLookup.exe` and the four exactly named Parquet files in one
    writable folder, such as `Documents\NYCDetentionLookup`.
 3. Double-click `NYCDetentionLookup.exe`.
 4. Because the app is not code-signed, Microsoft Defender SmartScreen may show
@@ -155,19 +156,19 @@ uname -m
 
 Download the matching Actions artifact:
 
-- `x86_64`: `NYCDetentionLookup-Linux-X64`
-- `aarch64` or `arm64`: `NYCDetentionLookup-Linux-ARM64`
+- `x86_64`: `NYCDetentionLookup-v1.1-Linux-X64`
+- `aarch64` or `arm64`: `NYCDetentionLookup-v1.1-Linux-ARM64`
 
 Move the downloaded archive and the required Parquet files into **Linux files**.
 Then extract and run it:
 
 ```bash
-tar -xzf NYCDetentionLookup-Linux-*.tar.gz
+tar -xzf NYCDetentionLookup-v1.1-Linux-*.tar.gz
 chmod +x NYCDetentionLookup
 ./NYCDetentionLookup
 ```
 
-The executable and all three exactly named Parquet files must remain in the
+The executable and all four exactly named Parquet files must remain in the
 same Linux directory. Managed school or workplace Chromebooks may disable the
 Linux development environment.
 

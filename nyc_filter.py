@@ -13,7 +13,13 @@ NYC_AOR = "New York City Area of Responsibility"
 ARRESTS_FILENAME = "arrests-latest.parquet"
 DETENTION_FILENAME = "detention-stints-latest.parquet"
 JOINED_FILENAME = "joined-arrests-detention-stays-latest.parquet"
-REQUIRED_FILENAMES = (ARRESTS_FILENAME, DETENTION_FILENAME, JOINED_FILENAME)
+FACILITIES_FILENAME = "facilities-latest.parquet"
+REQUIRED_FILENAMES = (
+    ARRESTS_FILENAME,
+    DETENTION_FILENAME,
+    JOINED_FILENAME,
+    FACILITIES_FILENAME,
+)
 
 
 class NYCFilterError(Exception):
@@ -40,8 +46,10 @@ def retain_nyc_arrest_cohort(project_dir: Path) -> list[FilterResult]:
     arrests_file = project_dir / ARRESTS_FILENAME
     detention_file = project_dir / DETENTION_FILENAME
     joined_file = project_dir / JOINED_FILENAME
+    facilities_file = project_dir / FACILITIES_FILENAME
     tasks = (arrests_file, detention_file, joined_file)
-    missing = [source.name for source in tasks if not source.is_file()]
+    required_files = (*tasks, facilities_file)
+    missing = [source.name for source in required_files if not source.is_file()]
     if missing:
         raise NYCFilterError("Missing required file(s): " + ", ".join(missing))
 
@@ -64,6 +72,9 @@ def retain_nyc_arrest_cohort(project_dir: Path) -> list[FilterResult]:
     generated: list[tuple[Path, Path]] = []
     results: list[FilterResult] = []
     try:
+        facilities_rows = connection.execute(
+            "SELECT count(*) FROM read_parquet(?)", [str(facilities_file)]
+        ).fetchone()[0]
         for source in tasks:
             predicate = predicates[source.name]
             source_sql = sql_literal(str(source))
@@ -117,6 +128,9 @@ def retain_nyc_arrest_cohort(project_dir: Path) -> list[FilterResult]:
 
         for source, temporary in generated:
             os.replace(temporary, source)
+        results.append(
+            FilterResult(FACILITIES_FILENAME, facilities_rows, facilities_rows)
+        )
         return results
     finally:
         connection.close()
