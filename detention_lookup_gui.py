@@ -40,14 +40,14 @@ class LookupWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(f"NYC Detention Lookup v{APP_VERSION}")
-        self.root.minsize(720, 390)
+        self.root.minsize(720, 500)
 
         container = ttk.Frame(root, padding=16)
         container.grid(row=0, column=0, sticky="nsew")
         root.rowconfigure(0, weight=1)
         root.columnconfigure(0, weight=1)
         container.columnconfigure(0, weight=1)
-        container.rowconfigure(5, weight=1)
+        container.rowconfigure(6, weight=1)
 
         toolbar = ttk.Frame(container)
         toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
@@ -68,12 +68,23 @@ class LookupWindow:
             row=0, column=2, padx=(8, 0)
         )
 
+        ttk.Label(
+            container,
+            text=(
+                '"I was in a place where the world didn\'t happen"\n'
+                '"Get that fish a lawyer"'
+            ),
+            font=("TkDefaultFont", 22, "italic"),
+            justify=tk.CENTER,
+            anchor=tk.CENTER,
+        ).grid(row=1, column=0, sticky="ew", pady=(4, 18))
+
         ttk.Label(container, text="Unique identifier").grid(
-            row=1, column=0, sticky="w"
+            row=2, column=0, sticky="w"
         )
 
         input_row = ttk.Frame(container)
-        input_row.grid(row=2, column=0, sticky="ew", pady=(5, 4))
+        input_row.grid(row=3, column=0, sticky="ew", pady=(5, 4))
         input_row.columnconfigure(0, weight=1)
 
         self.identifier_entry = ttk.Entry(input_row)
@@ -89,10 +100,10 @@ class LookupWindow:
             container,
             text="Paste an identifier, then select Search or press Return.",
             foreground="#555555",
-        ).grid(row=3, column=0, sticky="w", pady=(0, 12))
+        ).grid(row=4, column=0, sticky="w", pady=(0, 12))
 
         ttk.Label(container, text="Detention timeline").grid(
-            row=4, column=0, sticky="w"
+            row=5, column=0, sticky="w"
         )
 
         self.result_box = ScrolledText(
@@ -103,11 +114,11 @@ class LookupWindow:
             padx=8,
             pady=8,
         )
-        self.result_box.grid(row=5, column=0, sticky="nsew", pady=(5, 12))
+        self.result_box.grid(row=6, column=0, sticky="nsew", pady=(5, 12))
         self.result_box.configure(state=tk.DISABLED)
 
         footer = ttk.Frame(container)
-        footer.grid(row=6, column=0, sticky="ew")
+        footer.grid(row=7, column=0, sticky="ew")
         footer.columnconfigure(0, weight=1)
 
         self.status = ttk.Label(footer, text="Paste an identifier and select Search.")
@@ -339,6 +350,7 @@ def main() -> int:
         bundled_self_test()
         root = tk.Tk()
         root.withdraw()
+        LookupWindow(root)
         root.update_idletasks()
         root.destroy()
         return 0
