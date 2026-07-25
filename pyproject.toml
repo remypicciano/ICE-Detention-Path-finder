@@ -29,9 +29,9 @@ ice-detention-pathway-gui = "ice_detention_pathway_gui:main"
 parquet-viewer = "parquet_viewer:main"
 
 [project.urls]
-Homepage = "https://github.com/remypicciano/ice_query"
-Issues = "https://github.com/remypicciano/ice_query/issues"
-Documentation = "https://github.com/remypicciano/ice_query#readme"
+Homepage = "https://github.com/remypicciano/ICE-Detention-Path-finder"
+Issues = "https://github.com/remypicciano/ICE-Detention-Path-finder/issues"
+Documentation = "https://github.com/remypicciano/ICE-Detention-Path-finder#readme"
 Data = "https://deportationdata.org/data/processed/ice.html"
 
 [tool.setuptools]

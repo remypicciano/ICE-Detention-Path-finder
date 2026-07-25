@@ -3,7 +3,7 @@
 > Reconstruct an anonymized person's recorded route through ICE custody—from
 > arrest through every known detention-facility transfer.
 
-[![Tests](https://github.com/remypicciano/ice_query/actions/workflows/build-desktop.yml/badge.svg)](https://github.com/remypicciano/ice_query/actions/workflows/build-desktop.yml)
+[![Tests](https://github.com/remypicciano/ICE-Detention-Path-finder/actions/workflows/build-desktop.yml/badge.svg)](https://github.com/remypicciano/ICE-Detention-Path-finder/actions/workflows/build-desktop.yml)
 ![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-555)
 ![Data stays local](https://img.shields.io/badge/data-stays%20local-2E7D32)
@@ -69,8 +69,8 @@ Keep the filenames exactly as shown.
 ### 2. Install
 
 ```bash
-git clone https://github.com/remypicciano/ice_query.git
-cd ice_query
+git clone https://github.com/remypicciano/ICE-Detention-Path-finder.git
+cd ICE-Detention-Path-finder
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-lock.txt
@@ -197,5 +197,5 @@ and software that non-specialists can run locally.
 
 ## Contact
 
-- Questions or bug reports: [open a GitHub issue](https://github.com/remypicciano/ice_query/issues)
+- Questions or bug reports: [open a GitHub issue](https://github.com/remypicciano/ICE-Detention-Path-finder/issues)
 - Project and collaboration inquiries: [@remypicciano on GitHub](https://github.com/remypicciano)
