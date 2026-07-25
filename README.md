@@ -14,6 +14,9 @@ into a readable chronology. Give it a `unique_identifier`, `stay_ID`, or
 `stint_ID`; it finds the corresponding ICE arrest and orders every recorded
 detention stint by book-in time, resolving facility codes to canonical names.
 
+This project is related to the Deportation Data Project and uses its published
+ICE exports as source data. It is not affiliated with the project or with ICE.
+
 The project includes a desktop application, a terminal interface, a
 memory-efficient Parquet inspector, an optional NYC arrest-cohort filter, tests,
 and native build automation for macOS, Windows, and Linux.
@@ -51,17 +54,23 @@ Download the current Parquet datasets from the Deportation Data Project's
 [ICE data page](https://deportationdata.org/data/processed/ice.html) and place
 these files in the project directory:
 
+Required for the core lookup:
+
 ```text
 arrests-latest.parquet
 detention-stints-latest.parquet
 facilities-latest.parquet
 ```
 
-The optional NYC cohort tool also needs:
+Required only for the optional NYC cohort filter:
 
 ```text
 joined-arrests-detention-stays-latest.parquet
 ```
+
+In short, the core lookup needs `arrests-latest.parquet`,
+`detention-stints-latest.parquet`, and `facilities-latest.parquet`. The
+optional NYC filter also needs `joined-arrests-detention-stays-latest.parquet`.
 
 The datasets are intentionally excluded from Git and from application bundles.
 Keep the filenames exactly as shown.
