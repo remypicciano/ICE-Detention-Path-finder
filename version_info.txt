@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 2, 0, 0),
-    prodvers=(1, 2, 0, 0),
+    filevers=(2, 0, 0, 0),
+    prodvers=(2, 0, 0, 0),
     mask=0x3F,
     flags=0x0,
     OS=0x40004,
@@ -14,13 +14,13 @@ VSVersionInfo(
       StringTable(
         "040904B0",
         [
-          StringStruct("CompanyName", "NYC Detention Lookup"),
-          StringStruct("FileDescription", "NYC Detention Lookup"),
-          StringStruct("FileVersion", "1.2"),
-          StringStruct("InternalName", "NYCDetentionLookup"),
-          StringStruct("OriginalFilename", "NYCDetentionLookup.exe"),
-          StringStruct("ProductName", "NYC Detention Lookup"),
-          StringStruct("ProductVersion", "1.2")
+          StringStruct("CompanyName", "Rémy Picciano"),
+          StringStruct("FileDescription", "Reconstruct recorded ICE detention pathways"),
+          StringStruct("FileVersion", "2.0.0"),
+          StringStruct("InternalName", "ICEDetentionPathway"),
+          StringStruct("OriginalFilename", "ICEDetentionPathway.exe"),
+          StringStruct("ProductName", "ICE Detention Pathway"),
+          StringStruct("ProductVersion", "2.0.0")
         ]
       )
     ]),

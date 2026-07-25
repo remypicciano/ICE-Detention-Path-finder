@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  APP_VERSION: "1.2"
+  APP_VERSION: "2.0.0"
 
 jobs:
   build:
@@ -51,17 +51,17 @@ jobs:
           python -m pytest -q
 
       - name: Build application
-        run: python -m PyInstaller --noconfirm --clean NYCDetentionLookup.spec
+        run: python -m PyInstaller --noconfirm --clean ICEDetentionPathway.spec
 
       - name: Test bundled macOS application
         if: runner.os == 'macOS'
-        run: dist/NYCDetentionLookup.app/Contents/MacOS/NYCDetentionLookup --self-test
+        run: dist/ICEDetentionPathway.app/Contents/MacOS/ICEDetentionPathway --self-test
 
       - name: Test bundled Windows application
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $process = Start-Process -FilePath "dist\NYCDetentionLookup.exe" `
+          $process = Start-Process -FilePath "dist\ICEDetentionPathway.exe" `
             -ArgumentList "--self-test" -Wait -PassThru
           if ($process.ExitCode -ne 0) {
             throw "Bundled self-test failed with exit code $($process.ExitCode)"
@@ -70,36 +70,36 @@ jobs:
       - name: Test bundled Linux application
         if: runner.os == 'Linux'
         run: |
-          dist/NYCDetentionLookup --self-test
-          xvfb-run --auto-servernum dist/NYCDetentionLookup --gui-self-test
+          dist/ICEDetentionPathway --self-test
+          xvfb-run --auto-servernum dist/ICEDetentionPathway --gui-self-test
 
       - name: Package macOS artifact
         if: runner.os == 'macOS'
         run: |
           ditto -c -k --sequesterRsrc --keepParent \
-            dist/NYCDetentionLookup.app \
-            dist/NYCDetentionLookup-v${{ env.APP_VERSION }}-macOS-${{ runner.arch }}.zip
+            dist/ICEDetentionPathway.app \
+            dist/ICEDetentionPathway-v${{ env.APP_VERSION }}-macOS-${{ runner.arch }}.zip
 
       - name: Package Windows artifact
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path "dist\NYCDetentionLookup.exe" `
-            -DestinationPath "dist\NYCDetentionLookup-v${{ env.APP_VERSION }}-Windows.zip"
+          Compress-Archive -Path "dist\ICEDetentionPathway.exe" `
+            -DestinationPath "dist\ICEDetentionPathway-v${{ env.APP_VERSION }}-Windows.zip"
 
       - name: Package Linux artifact
         if: runner.os == 'Linux'
         run: |
           architecture="$(uname -m)"
-          tar -C dist -czf "NYCDetentionLookup-v${{ env.APP_VERSION }}-Linux-${architecture}.tar.gz" \
-            NYCDetentionLookup
+          tar -C dist -czf "ICEDetentionPathway-v${{ env.APP_VERSION }}-Linux-${architecture}.tar.gz" \
+            ICEDetentionPathway
 
       - name: Upload macOS artifact
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: NYCDetentionLookup-v${{ env.APP_VERSION }}-macOS-${{ runner.arch }}
-          path: dist/NYCDetentionLookup-v${{ env.APP_VERSION }}-macOS-${{ runner.arch }}.zip
+          name: ICEDetentionPathway-v${{ env.APP_VERSION }}-macOS-${{ runner.arch }}
+          path: dist/ICEDetentionPathway-v${{ env.APP_VERSION }}-macOS-${{ runner.arch }}.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -107,8 +107,8 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: NYCDetentionLookup-v${{ env.APP_VERSION }}-Windows
-          path: dist/NYCDetentionLookup-v${{ env.APP_VERSION }}-Windows.zip
+          name: ICEDetentionPathway-v${{ env.APP_VERSION }}-Windows
+          path: dist/ICEDetentionPathway-v${{ env.APP_VERSION }}-Windows.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -116,7 +116,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: NYCDetentionLookup-v${{ env.APP_VERSION }}-Linux-${{ runner.arch }}
-          path: NYCDetentionLookup-v${{ env.APP_VERSION }}-Linux-*.tar.gz
+          name: ICEDetentionPathway-v${{ env.APP_VERSION }}-Linux-${{ runner.arch }}
+          path: ICEDetentionPathway-v${{ env.APP_VERSION }}-Linux-*.tar.gz
           if-no-files-found: error
           retention-days: 14

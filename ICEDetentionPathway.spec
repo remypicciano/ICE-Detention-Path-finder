@@ -4,7 +4,7 @@ import sys
 
 
 a = Analysis(
-    ["detention_lookup_gui.py"],
+    ["ice_detention_pathway_gui.py"],
     pathex=[],
     binaries=[],
     datas=[],
@@ -24,7 +24,7 @@ if sys.platform == "darwin":
         a.scripts,
         [],
         exclude_binaries=True,
-        name="NYCDetentionLookup",
+        name="ICEDetentionPathway",
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,
@@ -41,17 +41,17 @@ if sys.platform == "darwin":
         a.datas,
         strip=False,
         upx=False,
-        name="NYCDetentionLookup",
+        name="ICEDetentionPathway",
     )
     app = BUNDLE(
         collection,
-        name="NYCDetentionLookup.app",
+        name="ICEDetentionPathway.app",
         icon=None,
-        bundle_identifier="org.local.nycdetentionlookup",
+        bundle_identifier="dev.remypicciano.icedetentionpathway",
         info_plist={
-            "CFBundleDisplayName": "NYC Detention Lookup",
-            "CFBundleShortVersionString": "1.2",
-            "CFBundleVersion": "1.2.0",
+            "CFBundleDisplayName": "ICE Detention Pathway",
+            "CFBundleShortVersionString": "2.0.0",
+            "CFBundleVersion": "2.0.0",
             "NSHighResolutionCapable": True,
         },
     )
@@ -62,7 +62,7 @@ else:
         a.binaries,
         a.datas,
         [],
-        name="NYCDetentionLookup",
+        name="ICEDetentionPathway",
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,

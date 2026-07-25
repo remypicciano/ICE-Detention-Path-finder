@@ -1,4 +1,4 @@
-"""Minimal desktop interface for detention identifier lookups."""
+"""Desktop interface for reconstructing recorded ICE detention pathways."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from tkinter.scrolledtext import ScrolledText
 
 import duckdb
 
-from detention_lookup import (
+from ice_detention_pathway import (
     LookupError,
     fetch_timeline,
     format_full_timeline,
@@ -21,13 +21,23 @@ from detention_lookup import (
 from nyc_filter import NYCFilterError, FilterResult, retain_nyc_arrest_cohort
 
 
-APP_VERSION = "1.2"
+APP_NAME = "ICE Detention Pathway"
+APP_VERSION = "2.0.0"
 
 
 def application_directory() -> Path:
     """Locate external data beside the script, Windows exe, or macOS app."""
     if not getattr(sys, "frozen", False):
-        return Path(__file__).resolve().parent
+        source_directory = Path(__file__).resolve().parent
+        working_directory = Path.cwd()
+        expected_data = (
+            "arrests-latest.parquet",
+            "detention-stints-latest.parquet",
+            "facilities-latest.parquet",
+        )
+        if any((working_directory / name).is_file() for name in expected_data):
+            return working_directory
+        return source_directory
 
     executable = Path(sys.executable).resolve()
     if sys.platform == "darwin" and executable.parents[2].suffix == ".app":
@@ -44,7 +54,7 @@ FACILITIES_FILE = PROJECT_DIR / "facilities-latest.parquet"
 class LookupWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title(f"NYC Detention Lookup v{APP_VERSION}")
+        self.root.title(f"{APP_NAME} v{APP_VERSION}")
         self.root.minsize(720, 570)
 
         container = ttk.Frame(root, padding=16)
@@ -60,7 +70,7 @@ class LookupWindow:
 
         ttk.Label(
             toolbar,
-            text=f"NYC Detention Lookup v{APP_VERSION}",
+            text=f"{APP_NAME} v{APP_VERSION}",
             font=("TkDefaultFont", 15),
         ).grid(row=0, column=0, sticky="w")
         self.filter_button = ttk.Button(
@@ -224,7 +234,7 @@ class LookupWindow:
 
     def show_help(self) -> None:
         help_window = tk.Toplevel(self.root)
-        help_window.title("How to use NYC Detention Lookup")
+        help_window.title(f"How to use {APP_NAME}")
         help_window.minsize(650, 480)
         help_window.transient(self.root)
 

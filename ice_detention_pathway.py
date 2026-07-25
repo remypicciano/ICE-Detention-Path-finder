@@ -1,4 +1,4 @@
-"""Look up a single arrest identifier and print its detention timeline."""
+"""Reconstruct one anonymized person's recorded path through ICE detention."""
 
 from __future__ import annotations
 
@@ -118,8 +118,8 @@ def fetch_timeline(
 
         if not arrest_rows:
             raise LookupError(
-                "Identifier not found in the current NYC-AOR arrests dataset. "
-                "It may be invalid or may have been removed by the NYC-only filter."
+                "Identifier not found in the arrests dataset. It may be invalid "
+                "or may have been excluded from the locally filtered data."
             )
         if len(arrest_rows) != 1:
             raise LookupError(
@@ -236,9 +236,10 @@ def format_full_timeline(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
+        prog="ice-detention-pathway",
         description=(
-            "Require one arrest row for an identifier, then print every matching "
-            "detention row as a chronological timeline."
+            "Reconstruct a chronological ICE detention pathway from a Deportation "
+            "Data Project identifier."
         )
     )
     parser.add_argument(

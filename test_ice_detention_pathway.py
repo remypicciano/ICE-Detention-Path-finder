@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import duckdb
 import pytest
 
-from detention_lookup import (
+from ice_detention_pathway import (
     ArrestEvent,
     LookupError,
     clean_location,

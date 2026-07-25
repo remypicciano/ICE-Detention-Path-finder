@@ -37,10 +37,10 @@ Test and build:
 ```bash
 python -m pytest -q
 ./build_macos.sh
-dist/NYCDetentionLookup.app/Contents/MacOS/NYCDetentionLookup --self-test
+dist/ICEDetentionPathway.app/Contents/MacOS/ICEDetentionPathway --self-test
 ```
 
-Open `dist/NYCDetentionLookup.app`, paste a known valid identifier, verify its
+Open `dist/ICEDetentionPathway.app`, paste a known valid identifier, verify its
 timeline, and test Copy to Clipboard. An unsigned app may require Control-click,
 Open on first launch.
 
@@ -52,12 +52,12 @@ Check the Mac processor in Terminal:
 uname -m
 ```
 
-- `arm64`: download `NYCDetentionLookup-v1.2-macOS-ARM64` (Apple Silicon).
-- `x86_64`: download `NYCDetentionLookup-v1.2-macOS-X64` (Intel).
+- `arm64`: download `ICEDetentionPathway-v2.0.0-macOS-ARM64` (Apple Silicon).
+- `x86_64`: download `ICEDetentionPathway-v2.0.0-macOS-X64` (Intel).
 
 GitHub downloads an outer artifact ZIP containing a second, macOS-preserving
 ZIP. Extract the outer ZIP, then extract the inner
-`NYCDetentionLookup-v1.2-macOS-*.zip` before opening the `.app`. The inner ZIP is
+`ICEDetentionPathway-v2.0.0-macOS-*.zip` before opening the `.app`. The inner ZIP is
 important because it preserves the app bundle and executable permissions.
 
 On first launch, Control-click the extracted app and choose **Open**. If macOS
@@ -70,14 +70,14 @@ opened rather than showing a security warning:
 3. Confirm the executable permission:
 
    ```bash
-   chmod +x NYCDetentionLookup.app/Contents/MacOS/NYCDetentionLookup
+   chmod +x ICEDetentionPathway.app/Contents/MacOS/ICEDetentionPathway
    ```
 
 4. For an app downloaded from your own trusted repository, clear its quarantine
    attribute if necessary:
 
    ```bash
-   xattr -dr com.apple.quarantine NYCDetentionLookup.app
+   xattr -dr com.apple.quarantine ICEDetentionPathway.app
    ```
 
 Then Control-click and choose **Open** again. Formal Apple code signing and
@@ -99,7 +99,7 @@ python -m pytest -q
 Run the bundled dependency check:
 
 ```powershell
-$process = Start-Process -FilePath ".\dist\NYCDetentionLookup.exe" `
+$process = Start-Process -FilePath ".\dist\ICEDetentionPathway.exe" `
   -ArgumentList "--self-test" -Wait -PassThru
 $process.ExitCode
 ```
@@ -110,9 +110,9 @@ identifier, timeline, and clipboard checks.
 ### What to expect on Windows
 
 1. Extract the downloaded ZIP. Do not run the application from inside the ZIP.
-2. Put `NYCDetentionLookup.exe` and the four exactly named Parquet files in one
-   writable folder, such as `Documents\NYCDetentionLookup`.
-3. Double-click `NYCDetentionLookup.exe`.
+2. Put `ICEDetentionPathway.exe` and the four exactly named Parquet files in one
+   writable folder, such as `Documents\ICEDetentionPathway`.
+3. Double-click `ICEDetentionPathway.exe`.
 4. Because the app is not code-signed, Microsoft Defender SmartScreen may show
    **Windows protected your PC**. Select **More info**, verify the app name, then
    select **Run anyway**.
@@ -156,16 +156,16 @@ uname -m
 
 Download the matching Actions artifact:
 
-- `x86_64`: `NYCDetentionLookup-v1.2-Linux-X64`
-- `aarch64` or `arm64`: `NYCDetentionLookup-v1.2-Linux-ARM64`
+- `x86_64`: `ICEDetentionPathway-v2.0.0-Linux-X64`
+- `aarch64` or `arm64`: `ICEDetentionPathway-v2.0.0-Linux-ARM64`
 
 Move the downloaded archive and the required Parquet files into **Linux files**.
 Then extract and run it:
 
 ```bash
-tar -xzf NYCDetentionLookup-v1.2-Linux-*.tar.gz
-chmod +x NYCDetentionLookup
-./NYCDetentionLookup
+tar -xzf ICEDetentionPathway-v2.0.0-Linux-*.tar.gz
+chmod +x ICEDetentionPathway
+./ICEDetentionPathway
 ```
 
 The executable and all four exactly named Parquet files must remain in the
@@ -183,7 +183,7 @@ sudo apt-get install -y tk libx11-6 libxext6 libxrender1 libxft2 libfontconfig1
 
 Useful troubleshooting:
 
-- `Permission denied`: run `chmod +x NYCDetentionLookup` again.
+- `Permission denied`: run `chmod +x ICEDetentionPathway` again.
 - `Exec format error`: download the artifact matching `uname -m`.
 - Data file not found: confirm the Parquet names and capitalization exactly.
 - No window appears: confirm Linux GUI applications are supported and that the

@@ -8,7 +8,6 @@ if [[ ! -x .venv/bin/python ]]; then
   exit 1
 fi
 
-.venv/bin/python -m PyInstaller --noconfirm --clean NYCDetentionLookup.spec
+.venv/bin/python -m PyInstaller --noconfirm --clean ICEDetentionPathway.spec
 
-echo "Build complete: dist/NYCDetentionLookup.app"
-
+echo "Build complete: dist/ICEDetentionPathway.app"
