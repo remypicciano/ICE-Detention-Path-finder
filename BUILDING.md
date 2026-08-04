@@ -12,14 +12,8 @@ For normal lookup, place these files beside the `.app` or `.exe`:
 - `detention-stints-latest.parquet`
 - `facilities-latest.parquet`
 
-The in-app NYC filtering tool additionally requires:
-
-- `joined-arrests-detention-stays-latest.parquet`
-
-The filter keeps only NYC-AOR arrests, then retains **all** detention stints for
-those arrest identifiers—including movements to facilities outside NYC. Start
-with fresh original files. An older NYC-stint-filtered detention file cannot
-restore previously removed transfers.
+Use the complete national files. A locally reduced copy silently removes people
+and stays, and a search result cannot reveal that anything is missing.
 
 ## Local macOS build
 
@@ -123,9 +117,9 @@ identifier, timeline, and clipboard checks.
    on first launch. The app does not require administrator privileges or an
    installer.
 
-Keep the app out of `Program Files`: the NYC filtering option needs permission
-to validate and replace the Parquet files beside the executable. A future
-code-signing certificate would reduce SmartScreen warnings.
+Keep the app out of `Program Files` so it can read the Parquet files placed
+beside the executable. A future code-signing certificate would reduce
+SmartScreen warnings.
 
 ## GitHub Actions builds
 
