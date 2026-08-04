@@ -7,22 +7,21 @@ import tkinter as tk
 import sys
 import uuid
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 
 import duckdb
 
 from ice_detention_pathway import (
     LookupError,
-    fetch_timeline,
-    format_full_timeline,
-    override_arrest_location,
+    fetch_pathway,
+    format_pathway,
+    override_pathway_arrest_location,
 )
-from nyc_filter import NYCFilterError, FilterResult, retain_nyc_arrest_cohort
 
 
 APP_NAME = "ICE Detention Pathway"
-APP_VERSION = "2.0.0"
+APP_VERSION = "3.1.0"
 
 
 def application_directory() -> Path:
@@ -73,14 +72,8 @@ class LookupWindow:
             text=f"{APP_NAME} v{APP_VERSION}",
             font=("TkDefaultFont", 15),
         ).grid(row=0, column=0, sticky="w")
-        self.filter_button = ttk.Button(
-            toolbar,
-            text="Keep NYC Arrest Cohort…",
-            command=self.confirm_nyc_filter,
-        )
-        self.filter_button.grid(row=0, column=1, padx=(8, 0))
         ttk.Button(toolbar, text="? Help", command=self.show_help).grid(
-            row=0, column=2, padx=(8, 0)
+            row=0, column=1, padx=(8, 0)
         )
 
         ttk.Label(
@@ -182,7 +175,6 @@ class LookupWindow:
             return
 
         self.search_button.configure(state=tk.DISABLED)
-        self.filter_button.configure(state=tk.DISABLED)
         self.copy_button.configure(state=tk.DISABLED)
         self.status.configure(text="Searching…")
         self.set_result("")
@@ -194,33 +186,34 @@ class LookupWindow:
 
     def run_search(self, identifier: str, manual_location: str) -> None:
         try:
-            _base_identifier, arrest, rows = fetch_timeline(
+            pathway = fetch_pathway(
                 identifier,
                 arrests_file=ARRESTS_FILE,
                 detention_file=DETENTION_FILE,
                 facilities_file=FACILITIES_FILE,
             )
-            arrest = override_arrest_location(arrest, manual_location)
-            result = format_full_timeline(arrest, rows)
+            pathway = override_pathway_arrest_location(pathway, manual_location)
+            result = format_pathway(pathway)
         except (LookupError, duckdb.Error) as exc:
             self.root.after(0, self.show_error, str(exc))
             return
-        self.root.after(0, self.show_result, result, len(rows))
-
-    def show_result(self, result: str, row_count: int) -> None:
-        self.set_result(result, editable=True)
-        self.status.configure(
-            text=f"Found {row_count} detention row(s). Edit the timeline if needed."
+        self.root.after(
+            0, self.show_result, result, pathway.row_count, len(pathway.stays)
         )
+
+    def show_result(self, result: str, row_count: int, stay_count: int) -> None:
+        self.set_result(result, editable=True)
+        summary = f"Found {row_count} detention row(s) across {stay_count} stay(s)."
+        if stay_count > 1:
+            summary += " Separate stays are shown separately; they are not one continuous detention."
+        self.status.configure(text=f"{summary} Edit the timeline if needed.")
         self.search_button.configure(state=tk.NORMAL)
-        self.filter_button.configure(state=tk.NORMAL)
         self.copy_button.configure(state=tk.NORMAL)
 
     def show_error(self, message: str) -> None:
         self.set_result(message)
         self.status.configure(text="Lookup failed.")
         self.search_button.configure(state=tk.NORMAL)
-        self.filter_button.configure(state=tk.NORMAL)
         self.copy_button.configure(state=tk.DISABLED)
 
     def copy_result(self) -> None:
@@ -250,16 +243,15 @@ class LookupWindow:
 2. Optionally enter a more precise arrest location. This changes only the
 displayed result, not the source Parquet file.
 3. Select Search or press Return.
-4. The program requires exactly one matching arrest row, then finds every
-matching detention row and orders those rows by book-in time.
+4. The program finds every detention and arrest record for that identifier,
+groups the detention records into stays, and orders each stay by book-in time.
 5. Edit the generated timeline directly if you need to add or correct other
 manual details.
 6. Select Copy to Clipboard to copy the text currently shown in the timeline.
 
-The timeline begins with the arrest date and location, then moves from the
-oldest detention event to the most recent. Impossible chronology is retained
-but marked with a (DISCREPANCY: ...) note. A missing book-out date appears as
-UNKNOWN - CURRENTLY HELD (?) because the data cannot confirm release.
+Impossible chronology is retained but marked with a (DISCREPANCY: ...) note. A
+missing book-out date appears as UNKNOWN - CURRENTLY HELD (?) because the data
+cannot confirm release.
 
 Output format:
 
@@ -269,6 +261,29 @@ Output format:
 Values after the first underscore are ignored. This lets a stay_ID or stint_ID
 be reduced to its base unique_identifier.
 
+SEPARATE STAYS
+
+A person may be detained more than once. Each continuous period in custody is a
+stay, and each facility placement inside a stay is a stint. When more than one
+stay is found, each is labelled [STAY n of total] and the break between them is
+shown as, for example:
+
+  === RELEASED (Paroled); NOT IN ICE CUSTODY FOR 396 days ===
+
+Separate stays are never joined into one pathway. Reading two stays as
+continuous detention would overstate time in custody, often by many months.
+
+MISSING RECORDS
+
+A stay with no matching arrest record is labelled NO ARREST RECORD IN THIS
+DATASET, followed by the program and area of responsibility that opened it.
+This is normal and does not mean the record is wrong: the arrests table covers
+ICE arrests, so someone transferred into ICE custody from Border Patrol has
+detention records and no arrest record.
+
+An arrest with no detention record is reported the same way, under
+[ARREST WITH NO RECORDED DETENTION].
+
 REQUIRED FILES
 
 Place the downloaded Parquet files in the same directory as this script,
@@ -276,30 +291,10 @@ Windows .exe, or macOS .app and use these exact filenames:
 
   arrests-latest.parquet
   detention-stints-latest.parquet
-  joined-arrests-detention-stays-latest.parquet
   facilities-latest.parquet
 
-The arrests, detention-stints, and facilities files are required for lookup.
-All four files are required by the NYC filtering option.
-
-NYC ARREST-COHORT FILTER
-
-Keep NYC Arrest Cohort rewrites the arrests, detention, and joined Parquet
-files. It does not rewrite the facilities table. It:
-
-  1. Keeps only arrest rows whose apprehension AOR exactly equals:
-
-  New York City Area of Responsibility
-
-  2. Keeps every detention stint for those NYC-arrest identifiers, including
-     transfers to detention centers outside NYC.
-  3. Keeps joined rows associated with NYC-AOR arrests.
-  4. Leaves every row in facilities-latest.parquet unchanged so detention
-     centers outside NYC remain available for names and codes.
-
-If an older version already removed non-NYC detention stints, download a fresh
-original detention-stints-latest.parquet before using this filter. Deleted
-transfers cannot be reconstructed. Keep backups if you may need the full data.
+Use complete national files. A locally reduced copy silently removes people and
+stays, which cannot be detected from a search result.
 
 DEPENDENCIES
 
@@ -313,57 +308,6 @@ Homebrew Python, the desktop window also requires:
         ttk.Button(frame, text="Close", command=help_window.destroy).pack(
             anchor="e", pady=(10, 0)
         )
-
-    def confirm_nyc_filter(self) -> None:
-        confirmed = messagebox.askyesno(
-            "Keep the NYC arrest cohort?",
-            "This permanently overwrites the arrests, detention, and joined "
-            "Parquet files. The facilities table remains unchanged. It keeps "
-            "only NYC-AOR arrests, but preserves every detention stint for "
-            "those people—including detention centers outside NYC.\n\n"
-            "If an older version already removed non-NYC stints, replace the "
-            "detention file with a fresh original first. Continue?",
-            icon=messagebox.WARNING,
-            parent=self.root,
-        )
-        if not confirmed:
-            return
-
-        self.search_button.configure(state=tk.DISABLED)
-        self.filter_button.configure(state=tk.DISABLED)
-        self.copy_button.configure(state=tk.DISABLED)
-        self.status.configure(text="Building and validating NYC arrest cohort…")
-        threading.Thread(target=self.run_nyc_filter, daemon=True).start()
-
-    def run_nyc_filter(self) -> None:
-        try:
-            results = retain_nyc_arrest_cohort(PROJECT_DIR)
-        except (NYCFilterError, duckdb.Error, OSError) as exc:
-            self.root.after(0, self.show_filter_error, str(exc))
-            return
-        self.root.after(0, self.show_filter_result, results)
-
-    def show_filter_result(self, results: list[FilterResult]) -> None:
-        summary = "\n".join(
-            f"{result.filename}: {result.retained_rows:,} retained; "
-            f"{result.removed_rows:,} removed"
-            for result in results
-        )
-        self.status.configure(text="NYC arrest-cohort filtering complete.")
-        self.search_button.configure(state=tk.NORMAL)
-        self.filter_button.configure(state=tk.NORMAL)
-        messagebox.showinfo(
-            "NYC arrest-cohort filtering complete", summary, parent=self.root
-        )
-
-    def show_filter_error(self, message: str) -> None:
-        self.status.configure(
-            text="NYC arrest-cohort filtering failed; originals unchanged."
-        )
-        self.search_button.configure(state=tk.NORMAL)
-        self.filter_button.configure(state=tk.NORMAL)
-        messagebox.showerror("Filtering failed", message, parent=self.root)
-
 
 def bundled_self_test() -> None:
     """Verify critical bundled imports without opening a window or reading data."""

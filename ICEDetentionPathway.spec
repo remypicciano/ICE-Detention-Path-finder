@@ -50,8 +50,8 @@ if sys.platform == "darwin":
         bundle_identifier="dev.remypicciano.icedetentionpathway",
         info_plist={
             "CFBundleDisplayName": "ICE Detention Pathway",
-            "CFBundleShortVersionString": "2.0.0",
-            "CFBundleVersion": "2.0.0",
+            "CFBundleShortVersionString": "3.1.0",
+            "CFBundleVersion": "3.1.0",
             "NSHighResolutionCapable": True,
         },
     )
