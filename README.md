@@ -11,15 +11,20 @@
 ICE Detention Pathway turns linked Parquet records from the
 [Deportation Data Project](https://deportationdata.org/data/processed/ice.html)
 into a readable chronology. Give it a `unique_identifier`, `stay_ID`, or
-`stint_ID`; it finds the corresponding ICE arrest and orders every recorded
-detention stint by book-in time, resolving facility codes to canonical names.
+`stint_ID`; it finds every recorded stay, pairs each with the arrest that opened
+it, and orders the detention stints inside each stay by book-in time, resolving
+facility codes to canonical names.
+
+A person may be detained more than once. Separate stays are reported separately,
+never chained into one pathway, because reading two detentions as continuous
+would overstate time in custody.
 
 This project is related to the Deportation Data Project and uses its published
 ICE exports as source data. It is not affiliated with the project or with ICE.
 
 The project includes a desktop application, a terminal interface, a
-memory-efficient Parquet inspector, an optional NYC arrest-cohort filter, tests,
-and native build automation for macOS, Windows, and Linux.
+memory-efficient Parquet inspector, an evidence-receipt verifier, tests, and
+native build automation for macOS, Windows, and Linux.
 
 ## What it produces
 
@@ -39,6 +44,9 @@ Example output (fabricated):
 ### Highlights
 
 - Reconstructs all recorded facility stints for one anonymized identifier.
+- Groups stints into stays and keeps separate detentions visibly separate.
+- Reports people who have detention records but no ICE arrest record.
+- Handles people arrested more than once, pairing each arrest with its own stay.
 - Accepts base identifiers as well as suffixed stay and stint identifiers.
 - Normalizes timestamps to UTC and facility codes to canonical names.
 - Preserves questionable chronology and labels it with `DISCREPANCY`.
@@ -54,23 +62,14 @@ Download the current Parquet datasets from the Deportation Data Project's
 [ICE data page](https://deportationdata.org/data/processed/ice.html) and place
 these files in the project directory:
 
-Required for the core lookup:
-
 ```text
 arrests-latest.parquet
 detention-stints-latest.parquet
 facilities-latest.parquet
 ```
 
-Required only for the optional NYC cohort filter:
-
-```text
-joined-arrests-detention-stays-latest.parquet
-```
-
-In short, the core lookup needs `arrests-latest.parquet`,
-`detention-stints-latest.parquet`, and `facilities-latest.parquet`. The
-optional NYC filter also needs `joined-arrests-detention-stays-latest.parquet`.
+Use the complete national files. Locally reduced copies silently remove people
+and stays, and no search result can reveal that something is missing.
 
 The datasets are intentionally excluded from Git and from application bundles.
 Keep the filenames exactly as shown.
@@ -123,27 +122,43 @@ Run `python ice_detention_pathway.py --help` for every option.
 2. Optionally enter a more precise arrest location. This changes only the
    displayed result.
 3. Select **Search** or press Return.
-4. Review any `DISCREPANCY` or `UNKNOWN` labels.
+4. Review any `DISCREPANCY`, `UNKNOWN`, or `[STAY n of total]` labels.
 5. Edit the generated text if needed, then select **Copy to Clipboard**.
-
-The **Keep NYC Arrest Cohort…** action reduces the local data to arrests made
-under the New York City Area of Responsibility while retaining every associated
-detention stint, including transfers outside New York. It overwrites three
-local Parquet files only after generating and validating replacements. Start
-with fresh originals and keep backups; filtering cannot restore previously
-removed records.
 
 ## How it works
 
 1. The input is normalized to the base identifier before its first underscore.
-2. DuckDB requires exactly one matching arrest record.
-3. Every detention stint with that anonymized identifier is joined to the
-   facilities table.
-4. Stints are sorted chronologically and formatted as one continuous pathway.
+2. Every detention stint for that identifier is joined to the facilities table
+   and grouped into stays by `stay_ID`.
+3. Each stay takes the nearest arrest record preceding its first book-in. Stays
+   with no such record are labelled `NO ARREST RECORD IN THIS DATASET`, and
+   arrests that opened no recorded stay are reported separately.
+4. Stints are sorted chronologically within each stay. Stays are rendered
+   separately, with the release reason and the gap between them.
 5. Impossible dates are retained and clearly labeled instead of silently fixed.
 
-The lookup runs in an in-memory DuckDB database. Source Parquet files are
-read-only during normal searches.
+Chronology warnings compare an arrest only against the stay it opened, so an
+unrelated earlier detention cannot trigger a false `DISCREPANCY`.
+
+The lookup runs in an in-memory DuckDB database, which reads the Parquet files
+in place. Nothing is imported and the source files are never modified.
+
+### Multi-stay output
+
+```text
+[STAY 1 of 2] NO ARREST RECORD IN THIS DATASET (entered via Border Patrol, Houston Area of Responsibility)-> [Book-in: ...][Book-out: ...], Facility A:AAA
+=== RELEASED (Paroled); NOT IN ICE CUSTODY FOR 396 days ===
+[STAY 2 of 2] 2025-12-30 10:36:35 UTC, ARREST LOCATION-> [Book-in: ...][Book-out: UNKNOWN - CURRENTLY HELD (?)], Facility B:BBB
+```
+
+### Verifying a result
+
+`verify_pathway.py` prints the source spreadsheet, sheet, and row behind every
+value in a pathway, so a reader can check it against the original ICE files:
+
+```bash
+python verify_pathway.py UNIQUE_IDENTIFIER
+```
 
 ## Data interpretation and safety
 
@@ -189,9 +204,9 @@ troubleshooting. Contributions are welcome; start with
 ## Project structure
 
 ```text
-ice_detention_pathway.py       Core query, validation, and CLI
+ice_detention_pathway.py       Core query, stay grouping, and CLI
 ice_detention_pathway_gui.py   Tk desktop application
-nyc_filter.py                  Validated NYC arrest-cohort filtering
+verify_pathway.py              Source-row provenance receipt for one identifier
 parquet_viewer.py              Bounded Parquet schema/row inspector
 ICEDetentionPathway.spec       Cross-platform PyInstaller definition
 test_*.py                      Automated tests

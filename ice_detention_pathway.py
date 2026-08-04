@@ -1,11 +1,23 @@
-"""Reconstruct one anonymized person's recorded path through ICE detention."""
+"""Reconstruct one anonymized person's recorded path through ICE detention.
+
+A person may be detained more than once. The source data records each
+continuous period in custody as a stay (`stay_ID`) and each facility placement
+within a stay as a stint. This module groups stints into stays, pairs each stay
+with the arrest that opened it when such a record exists, and renders one
+pathway per stay so separate detentions are never merged into a false
+chronology.
+
+Neither an arrest record nor a detention record is required on its own. People
+who entered ICE custody without an ICE arrest — a Border Patrol transfer, for
+example — have detention rows and no arrest row, and are reported normally.
+"""
 
 from __future__ import annotations
 
 import argparse
 import sys
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Sequence
 
@@ -15,6 +27,27 @@ import duckdb
 DEFAULT_ARRESTS_FILE = Path("arrests-latest.parquet")
 DEFAULT_DETENTION_FILE = Path("detention-stints-latest.parquet")
 DEFAULT_FACILITIES_FILE = Path("facilities-latest.parquet")
+
+# An arrest is treated as opening a stay that begins at or after it. Book-in
+# times occasionally precede the arrest by a little; this tolerance absorbs that
+# without letting an arrest claim a stay from an earlier detention.
+ARREST_TO_BOOK_IN_TOLERANCE = timedelta(hours=12)
+
+# Chronology is only reported as a discrepancy once the contradiction reaches a
+# full day. Sub-day inversions are overwhelmingly the order in which paperwork
+# was filed rather than an impossible sequence: of 9,058 stays whose arrest is
+# timestamped after their own first book-in, 7,867 are under 24 hours, and the
+# distribution flattens immediately past that point. Flagging them all made the
+# label appear on roughly a third of lookups, which taught readers to ignore it.
+#
+# The same threshold governs every chronology check so one rule explains them
+# all. Nothing is dropped or altered: sub-day inversions remain visible in the
+# printed timestamps and in the source rows.
+DISCREPANCY_MINIMUM_GAP = timedelta(days=1)
+
+NO_ARREST_NOTE = "NO ARREST RECORD IN THIS DATASET"
+
+DetentionRow = tuple["datetime | None", "str | None", "datetime | None"]
 
 
 class LookupError(Exception):
@@ -27,6 +60,69 @@ class ArrestEvent:
     date_only: date | None
     location: str | None
 
+    @property
+    def moment(self) -> datetime | None:
+        """Return the arrest instant in UTC, or None if only a date is known."""
+        if self.date_time is None:
+            return None
+        return utc_datetime(self.date_time)
+
+
+@dataclass(frozen=True)
+class Stay:
+    """One continuous period in ICE custody, with the stints inside it."""
+
+    stay_id: str | None
+    arrest: ArrestEvent | None
+    rows: list[DetentionRow]
+    entry_program: str | None = None
+    entry_aor: str | None = None
+    release_reason: str | None = None
+
+    @property
+    def start(self) -> datetime | None:
+        moments = [utc_datetime(row[0]) for row in self.rows if row[0] is not None]
+        return min(moments) if moments else None
+
+    @property
+    def end(self) -> datetime | None:
+        """Return the last book-out, or None while any stint is still open."""
+        if any(row[2] is None for row in self.rows):
+            return None
+        moments = [utc_datetime(row[2]) for row in self.rows if row[2] is not None]
+        return max(moments) if moments else None
+
+    @property
+    def entry_note(self) -> str:
+        """Name the stint fields that describe this stay's opening.
+
+        These values are quoted from the detention record, not from an arrest
+        record, and they are named rather than narrated. `final_program` is the
+        program of record for the case; it does not state which agency made an
+        apprehension, and the source data has no field that does.
+        """
+        fields = []
+        if self.entry_program:
+            fields.append(f"final_program: {self.entry_program}")
+        if self.entry_aor:
+            fields.append(f"book_in_aor: {self.entry_aor}")
+        if not fields:
+            return NO_ARREST_NOTE
+        return f"{NO_ARREST_NOTE} (first stint — {'; '.join(fields)})"
+
+
+@dataclass(frozen=True)
+class Pathway:
+    """Everything recorded for one identifier, grouped into stays."""
+
+    identifier: str
+    stays: list[Stay]
+    arrests_without_stay: list[ArrestEvent]
+
+    @property
+    def row_count(self) -> int:
+        return sum(len(stay.rows) for stay in self.stays)
+
 
 def override_arrest_location(
     arrest: ArrestEvent, manual_location: str
@@ -36,6 +132,32 @@ def override_arrest_location(
     if not cleaned_location:
         return arrest
     return ArrestEvent(arrest.date_time, arrest.date_only, cleaned_location)
+
+
+def override_pathway_arrest_location(
+    pathway: Pathway, manual_location: str
+) -> Pathway:
+    """Apply a presentation-only location to every arrest in a pathway."""
+    if not " ".join(manual_location.split()):
+        return pathway
+    stays = [
+        Stay(
+            stay.stay_id,
+            override_arrest_location(stay.arrest, manual_location)
+            if stay.arrest is not None
+            else None,
+            stay.rows,
+            stay.entry_program,
+            stay.entry_aor,
+            stay.release_reason,
+        )
+        for stay in pathway.stays
+    ]
+    unmatched = [
+        override_arrest_location(arrest, manual_location)
+        for arrest in pathway.arrests_without_stay
+    ]
+    return Pathway(pathway.identifier, stays, unmatched)
 
 
 def normalize_identifier(value: str) -> str:
@@ -77,22 +199,56 @@ def utc_datetime(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def exceeds_gap(earlier: datetime, later: datetime) -> bool:
+    """Report whether `earlier` precedes `later` by at least a full day.
+
+    Used by every chronology check so that a sub-day inversion — almost always
+    the order paperwork was filed — is not labelled the same as an impossible
+    sequence spanning months.
+    """
+    return later - earlier >= DISCREPANCY_MINIMUM_GAP
+
+
+def duration_text(start: datetime | None, end: datetime | None) -> str:
+    """Describe the span between two instants in whole days and hours."""
+    if start is None or end is None:
+        return "an unknown period"
+    span = utc_datetime(end) - utc_datetime(start)
+    if span < timedelta(0):
+        return f"a negative span of {abs(span.days)} days"
+    if span.days:
+        return f"{span.days} days"
+    hours = span.seconds // 3600
+    if hours:
+        return f"{hours} hours"
+    return f"{max(span.seconds // 60, 1)} minutes"
+
+
 def validate_file(path: Path, label: str) -> None:
     if not path.is_file():
         raise LookupError(f"The {label} Parquet file was not found: {path} -- make sure it's in the same folder as this program!")
 
 
-def fetch_timeline(
+def available_columns(connection: duckdb.DuckDBPyConnection, path: Path) -> set[str]:
+    """Return the column names present in a Parquet file."""
+    rows = connection.execute(
+        "DESCRIBE SELECT * FROM read_parquet(?)", [str(path)]
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def optional_column(name: str, present: set[str]) -> str:
+    """Select a column when the file has it, otherwise select NULL."""
+    return f"d.{name}" if name in present else "NULL"
+
+
+def fetch_pathway(
     identifier_input: str,
     arrests_file: Path = DEFAULT_ARRESTS_FILE,
     detention_file: Path = DEFAULT_DETENTION_FILE,
     facilities_file: Path = DEFAULT_FACILITIES_FILE,
-) -> tuple[
-    str,
-    ArrestEvent,
-    list[tuple[datetime | None, str | None, datetime | None]],
-]:
-    """Validate one arrest row and return all matching detention rows."""
+) -> Pathway:
+    """Return every recorded stay for one identifier, oldest first."""
     identifier = normalize_identifier(identifier_input)
     validate_file(arrests_file, "arrests")
     validate_file(detention_file, "detention")
@@ -112,44 +268,49 @@ def fetch_timeline(
                    ) AS arrest_location
             FROM read_parquet(?)
             WHERE unique_identifier = ?
+            ORDER BY apprehension_date_time NULLS LAST,
+                     apprehension_date NULLS LAST
             """,
             [str(arrests_file), identifier],
         ).fetchall()
 
-        if not arrest_rows:
-            raise LookupError(
-                "Identifier not found in the arrests dataset. It may be invalid "
-                "or may have been excluded from the locally filtered data."
-            )
-        if len(arrest_rows) != 1:
-            raise LookupError(
-                f"Expected exactly one arrest row, but found {len(arrest_rows)}. "
-                "No detention lookup was performed."
-            )
-
-        arrest = ArrestEvent(*arrest_rows[0])
-
-        rows = connection.execute(
-            """
-            SELECT d.book_in_date_time,
-                   CASE
-                       WHEN d.detention_facility_code IS NOT NULL THEN
-                           concat(
-                               coalesce(
-                                   nullif(trim(f.name), ''),
-                                   nullif(trim(d.detention_facility), ''),
-                                   'UNKNOWN DETENTION CENTER'
-                               ),
-                               ':',
-                               d.detention_facility_code
+        present = available_columns(connection, detention_file)
+        # Rows the Deportation Data Project flags as duplicates are kept and
+        # labelled rather than dropped, so a stint count here can be compared
+        # against its published figures instead of quietly diverging.
+        duplicate_marker = (
+            "CASE WHEN d.duplicate_drop_row THEN ' [FLAGGED DUPLICATE ROW]' ELSE '' END"
+            if "duplicate_drop_row" in present
+            else "''"
+        )
+        stint_rows = connection.execute(
+            f"""
+            SELECT {optional_column('stay_ID', present)} AS stay_id,
+                   d.book_in_date_time,
+                   concat(
+                       CASE
+                           WHEN d.detention_facility_code IS NOT NULL THEN
+                               concat(
+                                   coalesce(
+                                       nullif(trim(f.name), ''),
+                                       nullif(trim(d.detention_facility), ''),
+                                       'UNKNOWN DETENTION CENTER'
+                                   ),
+                                   ':',
+                                   d.detention_facility_code
+                               )
+                           ELSE coalesce(
+                               nullif(trim(f.name), ''),
+                               nullif(trim(d.detention_facility), ''),
+                               'UNKNOWN DETENTION CENTER'
                            )
-                       ELSE coalesce(
-                           nullif(trim(f.name), ''),
-                           nullif(trim(d.detention_facility), ''),
-                           'UNKNOWN DETENTION CENTER'
-                       )
-                   END AS facility_display,
-                   d.book_out_date_time
+                       END,
+                       {duplicate_marker}
+                   ) AS facility_display,
+                   d.book_out_date_time,
+                   {optional_column('detention_release_reason', present)} AS release_reason,
+                   {optional_column('final_program', present)} AS entry_program,
+                   {optional_column('book_in_aor', present)} AS entry_aor
             FROM read_parquet(?) d
             LEFT JOIN (
                 SELECT detention_facility_code, max(name) AS name
@@ -161,30 +322,123 @@ def fetch_timeline(
             ORDER BY d.book_in_date_time NULLS LAST,
                      d.book_out_date_time NULLS LAST,
                      facility_display NULLS LAST,
-                     d.row_original NULLS LAST
+                     {'d.row_original NULLS LAST' if 'row_original' in present else 'facility_display'}
             """,
             [str(detention_file), str(facilities_file), identifier],
         ).fetchall()
     finally:
         connection.close()
 
-    if not rows:
-        raise LookupError("The arrest row matched, but no detention rows were found.")
-    return identifier, arrest, rows
+    arrests = [ArrestEvent(row[0], row[1], row[2]) for row in arrest_rows]
+
+    if not arrest_rows and not stint_rows:
+        raise LookupError(
+            "Identifier not found in the arrests or detention datasets. It may "
+            "be invalid or may have been excluded from the locally filtered data."
+        )
+
+    stays = group_stays(stint_rows)
+    stays, unmatched = pair_arrests_with_stays(arrests, stays)
+    return Pathway(identifier, stays, unmatched)
 
 
-def format_timeline(
-    rows: Sequence[tuple[datetime | None, str | None, datetime | None]],
-) -> str:
+def group_stays(stint_rows: Sequence[tuple]) -> list[Stay]:
+    """Group stint rows into stays by stay_ID, oldest stay first."""
+    order: list[str | None] = []
+    grouped: dict[str | None, list[tuple]] = {}
+    for row in stint_rows:
+        stay_id = row[0]
+        if stay_id not in grouped:
+            grouped[stay_id] = []
+            order.append(stay_id)
+        grouped[stay_id].append(row)
+
+    stays = []
+    for stay_id in order:
+        members = grouped[stay_id]
+        last = members[-1]
+        stays.append(
+            Stay(
+                stay_id=stay_id,
+                arrest=None,
+                rows=[(row[1], row[2], row[3]) for row in members],
+                entry_program=members[0][5],
+                entry_aor=members[0][6],
+                release_reason=last[4],
+            )
+        )
+    return sorted(stays, key=lambda stay: (stay.start is None, stay.start or 0))
+
+
+def pair_arrests_with_stays(
+    arrests: Sequence[ArrestEvent], stays: Sequence[Stay]
+) -> tuple[list[Stay], list[ArrestEvent]]:
+    """Attach each arrest to the stay it opened.
+
+    Each stay takes the latest unclaimed arrest that precedes its first
+    book-in, because that is the arrest that produced the booking. Choosing the
+    nearest rather than the earliest matters for people arrested more than
+    once: an arrest from a year earlier must not claim a recent stay.
+
+    Arrests that open no recorded stay, and stays that no arrest explains, are
+    both reported rather than being forced together.
+    """
+    if len(arrests) == 1 and len(stays) == 1:
+        only = stays[0]
+        return [
+            Stay(
+                only.stay_id,
+                arrests[0],
+                only.rows,
+                only.entry_program,
+                only.entry_aor,
+                only.release_reason,
+            )
+        ], []
+
+    remaining = list(arrests)
+    paired: dict[int, ArrestEvent] = {}
+    for index, stay in enumerate(stays):
+        if stay.start is None:
+            continue
+        latest_allowed = stay.start + ARREST_TO_BOOK_IN_TOLERANCE
+        candidates = [
+            arrest
+            for arrest in remaining
+            if arrest.moment is not None and arrest.moment <= latest_allowed
+        ]
+        if not candidates:
+            continue
+        chosen = max(candidates, key=lambda arrest: arrest.moment)
+        paired[index] = chosen
+        remaining.remove(chosen)
+
+    unmatched = remaining
+
+    updated = [
+        Stay(
+            stay.stay_id,
+            paired.get(index),
+            stay.rows,
+            stay.entry_program,
+            stay.entry_aor,
+            stay.release_reason,
+        )
+        for index, stay in enumerate(stays)
+    ]
+    return updated, unmatched
+
+
+def format_timeline(rows: Sequence[DetentionRow]) -> str:
     segments = []
     previous_book_out: datetime | None = None
     for book_in, location, book_out in rows:
         warnings = []
         if book_in is not None and book_out is not None:
-            if utc_datetime(book_out) < utc_datetime(book_in):
+            if exceeds_gap(utc_datetime(book_out), utc_datetime(book_in)):
                 warnings.append("book-out is before book-in")
         if book_in is not None and previous_book_out is not None:
-            if utc_datetime(book_in) < utc_datetime(previous_book_out):
+            if exceeds_gap(utc_datetime(book_in), utc_datetime(previous_book_out)):
                 warnings.append("detention begins before previous book-out")
 
         segment = (
@@ -206,17 +460,27 @@ def format_timeline(
 
 
 def format_full_timeline(
-    arrest: ArrestEvent,
-    rows: Sequence[tuple[datetime | None, str | None, datetime | None]],
+    arrest: ArrestEvent | None,
+    rows: Sequence[DetentionRow],
+    entry_note: str = NO_ARREST_NOTE,
 ) -> str:
+    """Render one stay: its opening event, then every stint in order.
+
+    Chronology warnings compare the arrest only against the stints supplied
+    here, so an unrelated earlier stay can never trigger a false discrepancy.
+    """
+    if arrest is None:
+        return f"{entry_note}-> {format_timeline(rows)}"
+
     warnings = []
     first_book_in = next((row[0] for row in rows if row[0] is not None), None)
     if first_book_in is not None:
         if arrest.date_time is not None:
-            if utc_datetime(arrest.date_time) > utc_datetime(first_book_in):
+            if exceeds_gap(utc_datetime(first_book_in), utc_datetime(arrest.date_time)):
                 warnings.append("arrest date is after first detention book-in")
         elif arrest.date_only is not None:
-            if arrest.date_only > utc_datetime(first_book_in).date():
+            book_in_date = utc_datetime(first_book_in).date()
+            if arrest.date_only - book_in_date >= DISCREPANCY_MINIMUM_GAP:
                 warnings.append("arrest date is after first detention book-in")
 
     if arrest.date_time is not None:
@@ -231,7 +495,48 @@ def format_full_timeline(
         arrest_segment = (
             f"(DISCREPANCY: {'; '.join(warnings)}) {arrest_segment}"
         )
+    if not rows:
+        return f"{arrest_segment}-> NO DETENTION RECORD IN THIS DATASET"
     return f"{arrest_segment}-> {format_timeline(rows)}"
+
+
+def format_gap(previous: Stay, current: Stay) -> str:
+    """Describe the break between two stays so they read as separate."""
+    if previous.end is None or current.start is None:
+        return "=== SEPARATE STAY; GAP NOT MEASURABLE ==="
+    span = duration_text(previous.end, current.start)
+    if previous.release_reason:
+        return (
+            f"=== RELEASED ({' '.join(previous.release_reason.split())}); "
+            f"NOT IN ICE CUSTODY FOR {span} ==="
+        )
+    return f"=== NOT IN ICE CUSTODY FOR {span} ==="
+
+
+def format_pathway(pathway: Pathway) -> str:
+    """Render every stay, keeping separate detentions visibly separate."""
+    if not pathway.stays:
+        return "\n".join(
+            format_full_timeline(arrest, []) for arrest in pathway.arrests_without_stay
+        )
+
+    total = len(pathway.stays)
+    parts: list[str] = []
+    previous: Stay | None = None
+    for number, stay in enumerate(pathway.stays, start=1):
+        if previous is not None:
+            parts.append(format_gap(previous, stay))
+        rendered = format_full_timeline(stay.arrest, stay.rows, stay.entry_note)
+        # A lone stay needs no label; numbering only helps when stays must be
+        # told apart.
+        parts.append(rendered if total == 1 else f"[STAY {number} of {total}] {rendered}")
+        previous = stay
+
+    for arrest in pathway.arrests_without_stay:
+        parts.append(
+            f"[ARREST WITH NO RECORDED DETENTION] {format_full_timeline(arrest, [])}"
+        )
+    return "\n".join(parts)
 
 
 def parse_args() -> argparse.Namespace:
@@ -274,7 +579,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        identifier, arrest, rows = fetch_timeline(
+        pathway = fetch_pathway(
             args.identifier,
             arrests_file=args.arrests_file,
             detention_file=args.detention_file,
@@ -284,9 +589,11 @@ def main() -> int:
         print(f"Lookup failed: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Identifier: {identifier}")
-    print(f"Detention rows: {len(rows)}")
-    print(format_full_timeline(arrest, rows))
+    print(f"Identifier: {pathway.identifier}")
+    print(f"Stays: {len(pathway.stays)}   Detention rows: {pathway.row_count}")
+    if pathway.arrests_without_stay:
+        print(f"Arrests with no recorded detention: {len(pathway.arrests_without_stay)}")
+    print(format_pathway(pathway))
     return 0
 
 
