@@ -9,5 +9,6 @@ build/
 dist/
 *.parquet
 *.parquet.*
+pathway-*.html
 .DS_Store
 *.app/
