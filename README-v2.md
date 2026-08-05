@@ -44,10 +44,25 @@ The data was never wrong. `stay_ID` records the separation, and v1 ignored it.
 ## What v2 produces
 
 ```text
-[STAY 1 of 2] NO ARREST RECORD IN THIS DATASET (first stint — final_program: Border Patrol; book_in_aor: Houston Area of Responsibility)-> [Book-in: 2024-09-16 17:56:00 UTC][Book-out: 2024-11-29 10:44:00 UTC], Montgomery Processing Center:MTGPCTX
+[STAY 1 of 2] NO ARREST RECORD IN THIS DATASET -> [Book-in: 2024-09-16 17:56:00 UTC][Book-out: 2024-11-29 10:44:00 UTC][Facility: Montgomery Processing Center:MTGPCTX]
+[first stint — final_program: Border Patrol; book_in_aor: Houston Area of Responsibility]
+[last stint — classification: Medium / Low; case_status: ACTIVE; threat_level: NA; final_order: NO]
 === RELEASED (Paroled); NOT IN ICE CUSTODY FOR 396 days ===
-[STAY 2 of 2] 2025-12-30 10:36:35 UTC, NDD - 26 FEDERAL PLAZA NY, NY-> [Book-in: 2025-12-30 11:17:00 UTC][Book-out: 2025-12-30 18:25:00 UTC], NYC Hold Room:NYCHOLD -> [Book-in: 2025-12-30 20:26:00 UTC][Book-out: 2026-01-23 13:44:00 UTC], Orange County Jail:ORANGNY -> [Book-in: 2026-01-23 13:45:00 UTC][Book-out: UNKNOWN - CURRENTLY HELD (?)], MDC Brooklyn:BOPBRO
+[STAY 2 of 2] 2025-12-30 10:36:35 UTC, NDD - 26 FEDERAL PLAZA NY, NY -> [Book-in: 2025-12-30 11:17:00 UTC][Book-out: 2025-12-30 18:25:00 UTC][Facility: NYC Hold Room:NYCHOLD] -> [Book-in: 2025-12-30 20:26:00 UTC][Book-out: 2026-01-23 13:44:00 UTC][Facility: Orange County Jail:ORANGNY] -> [Book-in: 2026-01-23 13:45:00 UTC][Book-out: UNKNOWN - CURRENTLY HELD (?)][Facility: MDC Brooklyn:BOPBRO]
+[first stint — final_program: Non-Detained Docket Control; book_in_aor: New York City Area of Responsibility]
+[last stint — classification: Low; case_status: ACTIVE; threat_level: NA; final_order: NO]
 ```
+
+Every stay names the fields of its **first** and **last** stint. The first
+stint's `final_program` is always shown — Border Patrol and ERO Criminal Alien
+Program are CBP/ICE programs that the arrests table does not carry, so this is
+the only place they are visible. When later stints in the same stay disagree,
+the differing values are listed. The last stint's record state is quoted so a
+reader sees the stay's final record without the tool narrating an outcome.
+
+The output is a structured text format with fixed delimiters — stints joined by
+` -> `, each stint a sequence of `[Label: value]` blocks, one field list per
+line. It is machine-readable; the exact grammar is specified in [§14](#14-machine-readable-output-format).
 
 Single-stay lookups are unchanged from v1 and carry no `[STAY n of total]`
 label — the numbering appears only when stays must be told apart.
@@ -95,6 +110,14 @@ under `[ARREST WITH NO RECORDED DETENTION]`.
 A stay takes the **latest** unclaimed arrest preceding its first book-in — not
 the earliest. For someone arrested more than once, an arrest from a year
 earlier must not claim a recent stay.
+
+Two false-pairing paths are closed. A lone arrest no longer pairs with a lone
+stay without the time check, so an arrest logged after the stay's book-in
+stays unpaired (`[ARREST WITH NO RECORDED DETENTION]`). And once an earlier
+stay has claimed a newer arrest, an older leftover arrest can no longer be
+dumped on a later, unrelated stay — claims must be strictly newer across a
+person's stays. The bulk verifier removed 456 false pairings across the
+national data; see section 11.
 
 ### 4. Chronology warnings are scoped to one stay
 
@@ -147,11 +170,14 @@ with a different vocabulary — 8 distinct values there against 19 in detention.
 v2 names the fields and their source instead:
 
 ```text
-NO ARREST RECORD IN THIS DATASET (first stint — final_program: Border Patrol; book_in_aor: Houston Area of Responsibility)
+NO ARREST RECORD IN THIS DATASET -> [Book-in: 2024-09-16 17:56:00 UTC][Book-out: 2024-11-29 10:44:00 UTC][Facility: Montgomery Processing Center:MTGPCTX]
+[first stint — final_program: Border Patrol; book_in_aor: Houston Area of Responsibility]
 ```
 
-The reader maps those field names to the DDP codebook themselves. The tool
-makes no causal claim.
+The first stint's program is shown for **every** stay, arrest or no arrest —
+the arrests table does not carry the CBP/ICE program, so this line is the only
+place Border Patrol or ERO Criminal Alien Program appears. The reader maps the
+field names to the DDP codebook themselves. The tool makes no causal claim.
 
 ### 7. Duplicate rows are labelled, not dropped
 
@@ -195,6 +221,197 @@ python q.py "SELECT stay_ID, book_in_date_time FROM 'detention-stints-latest.par
 DuckDB reads the Parquet files in place. Nothing is imported, written, or
 persisted.
 
+### 11. A suffixed identifier scopes the answer to one stay
+
+Pasting a `stay_ID` (`base_YYYY-MM-DD HH:MM:SS`) or `stint_ID`
+(`base_..._code`) returns the whole person's history by default. Now the
+suffix names the stay being asked about: that stay renders in full and the
+person's other stays collapse to one context line.
+
+```text
+  [CONTEXT — another stay for this person: 2024-09-16 17:56:00 UTC -> 2024-11-29 10:44:00 UTC, Montgomery Processing Center:MTGPCTX]
+[STAY 2 of 2] 2025-12-30 10:36:35 UTC, NDD - 26 FEDERAL PLAZA NY, NY -> …
+```
+
+The CLI prints `Scoped to stay:` when a suffix matched.
+
+### 12. Every stay names its own metadata
+
+Each stay reports the fields of its first and last stint instead of a single
+opening note:
+
+- Every stint is a sequence of `[Label: value]` blocks: `[Book-in: …]`,
+  `[Book-out: …]`, `[Facility: name:code]`. Facility names may contain commas
+  (`CCA, FLORENCE CORRECTIONAL CENTER`), so they are bracketed rather than
+  separated by commas; the name/code split is the first `:`.
+- The first stint's program and AOR are always named:
+  `[first stint — final_program: …; book_in_aor: …]`. When later stints
+  disagree, the differing values are listed: `[stint fields — …]`.
+- The last stint's record state is rendered verbatim:
+  `[last stint — classification; case_status; threat_level; final_order;
+  final_order_date; departed; charge]`.
+
+These are quotes from the detention record, not outcomes. A missing `departed`
+means only that no later record exists in the source data.
+
+### 13. `verify_bulk.py` — national bulk verification
+
+The core tool answers one identifier per query. `verify_bulk.py` applies the
+*same* grouping and pairing to every identifier in one streaming pass, then
+checks invariants over all 1,014,866 people (C1–C10):
+
+```bash
+python verify_bulk.py                  # full pass + 1500-id cross-check
+python verify_bulk.py --skip-sample    # bulk checks only, faster
+python verify_bulk.py --limit 400000   # cap stints read (dev smoke runs)
+```
+
+The full national run passes every check and reproduces a deterministic
+rendering digest (sha256) — the same identifiers render to the same text every
+run. It also reports source-data anomalies that no pipeline can fix: ~3% of
+stays whose published boundary in the stays table is wider than the stint rows
+(31,618 earlier book-ins, 26,148 later book-outs, 441 closed-without-book-out),
+and 9 `stint_ID`s the source places under two stays. C10 enforces the output
+grammar's delimiter contract against the live data, so a future DDP data
+refresh cannot silently break the machine-readable format. Counts and wording
+live in `AUDIT.md`.
+
+### 14. Machine-readable output format
+
+The rendered pathway is a line-oriented text format with fixed delimiters. Any
+line can be parsed independently; a field value never spans lines. The
+delimiters below were chosen so that no value in the source data can collide
+with them — C10 in `verify_bulk.py` verifies that property against the live
+Parquet files on every run.
+
+**Line types** (a pathway is lines in this order: header, stays, orphan arrests):
+
+| Line | Grammar |
+| --- | --- |
+| header | `Identifier: <base>` · `Scoped to stay: <stay_ID>` · `Stays: <n>   Detention rows: <m>` · `Arrests with no recorded detention: <n>` |
+| stay | `[STAY <n> of <m>] ` + timeline, then its field lines |
+| field line | `[first stint — <pairs>]` · `[stint fields — <pairs>]` · `[last stint — <pairs>]` |
+| gap | `=== RELEASED (<reason>); NOT IN ICE CUSTODY FOR <span> ===` · `=== NOT IN ICE CUSTODY FOR <span> ===` · `=== SEPARATE STAY; GAP NOT MEASURABLE ===` |
+| context | `  [CONTEXT — another stay for this person: <start> -> <end>, <label>]` |
+| orphan | `[ARREST WITH NO RECORDED DETENTION] ` + timeline |
+
+A lone stay (single-stay lookup) carries no `[STAY n of m]` prefix — the
+timeline line stands alone. Header lines (`Identifier:`, `Stays:`, …) are CLI
+output and are not part of the pathway text itself.
+
+**Timeline grammar**
+
+```
+timeline  := opening ( " -> " stint )*
+opening   := <timestamp> ", " <location>        # split on the FIRST ", "; locations may contain ", "
+           | "NO ARREST RECORD IN THIS DATASET"
+           | <opening> " -> NO DETENTION RECORD IN THIS DATASET"
+stint     := [ "(DISCREPANCY: " warnings ")" " " ]
+             "[Book-in: " <ts> "]"
+             "[Book-out: " <ts> "]"
+             "[Facility: " <name> [ ":" <code> ] [ " [FLAGGED DUPLICATE ROW]" ] "]"
+ts        := "YYYY-MM-DD HH:MM:SS UTC" | "UNKNOWN - CURRENTLY HELD (?)" | "UNKNOWN UTC"
+```
+
+- ` -> ` is the only segment separator and never appears inside a value.
+- Each stint is a sequence of `[Label: value]` blocks joined by `][`; a
+  `(DISCREPANCY: …)` prefix, when present, precedes the first block and ends at
+  the first `) `. Facility names may contain commas, so the block's closing
+  bracket — not a comma — bounds the value.
+- Within a `[Facility: …]` value, the first `:` separates the name from the
+  code; names never contain a colon.
+
+**Field-list grammar**
+
+```
+pairs := pair ( "; " pair )*
+pair  := <label> ": " <value>      # split on the FIRST ": " occurrence
+```
+
+Labels are `final_program`, `book_in_aor`, and the seven `[last stint]` labels
+(`classification`, `case_status`, `threat_level`, `final_order`,
+`final_order_date`, `departed`, `charge`). A field line is terminated by
+end-of-line, **not** by its closing `]`: `final_charge` values quote statute
+citations that contain brackets (e.g. `[AFTER 4/1/97]`), so a parser should
+read to end-of-line and then strip exactly one trailing `]`. When a stay has
+more than one differing value for the same field, each value gets its own pair
+(`final_program: A; final_program: B`), so `; ` always separates complete
+pairs. Values may contain `:` and `[`/`]`; they never contain `; ` or a
+newline, so the pair split is unambiguous.
+
+**Parser sketch** (complete — parses the worked example above):
+
+```python
+import re
+
+SEG = " -> "
+
+def parse_timeline(text):
+    opening, *stints = re.split(re.escape(SEG), text)
+    if opening == "NO ARREST RECORD IN THIS DATASET":
+        events = [{"kind": "note", "text": opening}]
+    else:
+        ts, _, location = opening.partition(", ")
+        events = [{"kind": "arrest", "ts": ts, "location": location}]
+    for stint in stints:
+        if stint.startswith("NO DETENTION RECORD"):
+            events.append({"kind": "note", "text": stint})
+            continue
+        if stint.startswith("(DISCREPANCY: "):
+            prefix, _, stint = stint.partition(") ")
+        else:
+            prefix = None
+        fields = {}
+        for block in stint.split("]["):
+            block = block.strip("[]")
+            label, _, value = block.partition(": ")
+            if label == "Facility":
+                name, _, rest = value.partition(":")
+                fields["facility"] = name
+                fields["code"] = rest.split(" [")[0] if rest else ""
+            else:
+                fields[label.lower()] = value
+        if prefix:
+            fields["discrepancy"] = prefix
+        events.append({"kind": "stint", **fields})
+    return events
+
+def parse_field_line(line):
+    label, _, rest = line[1:].partition(" — ")
+    rest = rest[:-1] if rest.endswith("]") else rest   # strip the closing bracket
+    return label, [p.partition(": ")[::2] for p in rest.split("; ")]
+
+def parse_pathway(lines):
+    stays, current = [], None
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("  [CONTEXT"):
+            current["context"] = line[2:]
+        elif line.startswith("[STAY "):
+            m = re.match(r"\[STAY (\d+) of (\d+)\] ?(.*)", line)
+            current = {"index": int(m.group(1)), "total": int(m.group(2)),
+                       "timeline": parse_timeline(m.group(3)), "fields": []}
+            stays.append(current)
+        elif line.startswith(("[first stint —", "[stint fields —", "[last stint —")):
+            current["fields"].append(parse_field_line(line))
+        elif line.startswith("=== "):
+            current["gap"] = line
+        elif current is None and (
+            line.startswith(("NO ARREST RECORD", "NO DETENTION RECORD"))
+            or " -> " in line
+        ):
+            current = {"index": 1, "total": 1,
+                       "timeline": parse_timeline(line), "fields": []}
+            stays.append(current)
+    return stays
+```
+
+The format is documented as the contract for the current release; identifiers
+are stable, rendering text is not guaranteed stable across releases (the
+`verify_bulk` digest changes whenever wording changes).
+
 ---
 
 ## What v2 deliberately does not do
@@ -232,13 +449,13 @@ Open items include:
 
 - **B2** — program vocabulary is uncontrolled; output cannot be grouped by
   agency without a mapping this project does not have.
-- **B3** — pasting a `stay_ID` still returns every stay for that person.
-- **A4** — a lone arrest pairs with a lone stay without a time check.
-- **A6** — stay metadata reads `final_program` from the first stint and
-  `release_reason` from the last; a stay that moves between AORs shows only its
-  opening one.
-- **C2** — 204 stints overlap the previous stint inside the same stay.
-- **C7** — a locally filtered dataset cannot report that it is filtered.
+- **C2** — a small number of stints overlap the previous stint inside the same
+  stay; they are flagged.
+- **C8 boundary deltas** — the published stays table carries a wider nominal
+  window than the stint rows for ~3% of stays (31,618 earlier book-ins,
+  26,148 later book-outs). Reported by `verify_bulk.py`; not pipeline failures.
+- **Shared stint_IDs** — the source places 9 stints' `stint_ID` under more than
+  one stay; they resolve to the earliest containing stay.
 
 ---
 
@@ -272,10 +489,14 @@ Data Project.
 
 ## Upgrading from v1
 
-1. **Replace your Parquet files** with fresh national downloads from the
-   [DDP ICE data page](https://deportationdata.org/data/processed/ice.html).
+1. **Replace your Parquet files.** The desktop app's **Download / Update
+   Data…** button fetches the current national files listed in
+   `data-sources.json`, or run `python fetch_data.py` from the command line.
    Required: `arrests-latest.parquet`, `detention-stints-latest.parquet`,
-   `facilities-latest.parquet`. The joined file is no longer used.
+   `facilities-latest.parquet`. The download also fetches the optional
+   `detention-stays-latest.parquet` and
+   `joined-arrests-detention-stays-latest.parquet`; the joined file is not used
+   by the lookup.
 2. **Re-check any saved pathway** for a person with more than one stay. v1
    output for those people understated the gaps between detentions.
 3. **Expect fewer `DISCREPANCY` labels.** Sub-day inversions are no longer
