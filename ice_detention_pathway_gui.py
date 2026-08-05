@@ -319,8 +319,11 @@ cannot confirm release.
 
 Output format:
 
-  arrest date, arrest location-> [Book-in: date/time][Book-out: date/time],
-  facility:code -> next facility
+  arrest date, arrest location -> [Book-in: date/time][Book-out: date/time][Facility: facility:code]
+    -> next stint
+    [first stint — final_program: ...; book_in_aor: ...]
+    [last stint — classification; case_status; threat_level; final_order;
+     final_order_date; departed; charge]
 
 Values after the first underscore are ignored. This lets a stay_ID or stint_ID
 be reduced to its base unique_identifier.

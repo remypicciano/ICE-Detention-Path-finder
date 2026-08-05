@@ -69,6 +69,41 @@ class ArrestEvent:
 
 
 @dataclass(frozen=True)
+class StaySummary:
+    """Values taken from the stay's last recorded stint, named by field.
+
+    Every value is quoted from the detention record. These are not outcomes a
+    reader can assume are final: a missing `departed` means only that no later
+    record exists in the source data.
+    """
+
+    classification: str | None = None
+    case_status: str | None = None
+    threat_level: str | None = None
+    final_order: str | None = None
+    final_order_date: str | None = None
+    departed: str | None = None
+    final_charge: str | None = None
+
+    @property
+    def present(self) -> list[str]:
+        """Return (label, value) pairs for fields that carry a value."""
+        pairs = []
+        for label, value in (
+            ("classification", self.classification),
+            ("case_status", self.case_status),
+            ("threat_level", self.threat_level),
+            ("final_order", self.final_order),
+            ("final_order_date", self.final_order_date),
+            ("departed", self.departed),
+            ("charge", self.final_charge),
+        ):
+            if value:
+                pairs.append(f"{label}: {value}")
+        return pairs
+
+
+@dataclass(frozen=True)
 class Stay:
     """One continuous period in ICE custody, with the stints inside it."""
 
@@ -78,6 +113,24 @@ class Stay:
     entry_program: str | None = None
     entry_aor: str | None = None
     release_reason: str | None = None
+    stint_ids: tuple[str | None, ...] = ()
+    all_programs: tuple[str, ...] = ()
+    all_aors: tuple[str, ...] = ()
+    summary: StaySummary | None = None
+
+    @property
+    def program_variance(self) -> str | None:
+        distinct = [program for program in self.all_programs if program]
+        if len(distinct) > 1:
+            return "; ".join(distinct)
+        return None
+
+    @property
+    def aor_variance(self) -> str | None:
+        distinct = [aor for aor in self.all_aors if aor]
+        if len(distinct) > 1:
+            return "; ".join(distinct)
+        return None
 
     @property
     def start(self) -> datetime | None:
@@ -92,25 +145,6 @@ class Stay:
         moments = [utc_datetime(row[2]) for row in self.rows if row[2] is not None]
         return max(moments) if moments else None
 
-    @property
-    def entry_note(self) -> str:
-        """Name the stint fields that describe this stay's opening.
-
-        These values are quoted from the detention record, not from an arrest
-        record, and they are named rather than narrated. `final_program` is the
-        program of record for the case; it does not state which agency made an
-        apprehension, and the source data has no field that does.
-        """
-        fields = []
-        if self.entry_program:
-            fields.append(f"final_program: {self.entry_program}")
-        if self.entry_aor:
-            fields.append(f"book_in_aor: {self.entry_aor}")
-        if not fields:
-            return NO_ARREST_NOTE
-        return f"{NO_ARREST_NOTE} (first stint — {'; '.join(fields)})"
-
-
 @dataclass(frozen=True)
 class Pathway:
     """Everything recorded for one identifier, grouped into stays."""
@@ -118,6 +152,7 @@ class Pathway:
     identifier: str
     stays: list[Stay]
     arrests_without_stay: list[ArrestEvent]
+    focus_stay_id: str | None = None
 
     @property
     def row_count(self) -> int:
@@ -150,6 +185,10 @@ def override_pathway_arrest_location(
             stay.entry_program,
             stay.entry_aor,
             stay.release_reason,
+            stay.stint_ids,
+            stay.all_programs,
+            stay.all_aors,
+            stay.summary,
         )
         for stay in pathway.stays
     ]
@@ -157,14 +196,14 @@ def override_pathway_arrest_location(
         override_arrest_location(arrest, manual_location)
         for arrest in pathway.arrests_without_stay
     ]
-    return Pathway(pathway.identifier, stays, unmatched)
+    return Pathway(
+        pathway.identifier, stays, unmatched, focus_stay_id=pathway.focus_stay_id
+    )
 
 
 def normalize_identifier(value: str) -> str:
     """Return the base identifier before an optional underscore suffix."""
-    identifier = value.strip().split("_", maxsplit=1)[0]
-    if not identifier:
-        raise LookupError("The identifier cannot be empty.")
+    identifier, _ = parse_identifier(value)
     return identifier
 
 
@@ -242,6 +281,103 @@ def optional_column(name: str, present: set[str]) -> str:
     return f"d.{name}" if name in present else "NULL"
 
 
+def facility_name_expr() -> str:
+    """Canonical facility name, falling back to the raw detention-table name."""
+    return (
+        "coalesce("
+        "nullif(trim(f.name), ''), "
+        "nullif(trim(d.detention_facility), ''), "
+        "'UNKNOWN DETENTION CENTER')"
+    )
+
+
+def facility_display_expr(duplicate_marker: str) -> str:
+    """Facility name plus code, with an optional duplicate-row marker."""
+    return (
+        "concat("
+        "CASE WHEN d.detention_facility_code IS NOT NULL THEN "
+        f"concat({facility_name_expr()}, ':', d.detention_facility_code) "
+        f"ELSE {facility_name_expr()} END, "
+        f"{duplicate_marker})"
+    )
+
+
+def detention_select(present: set[str]) -> str:
+    """The column list for one detention stint row.
+
+    Shared by the per-identifier lookup and the bulk verifier so the two can
+    never disagree about which columns a stint carries or how a facility is
+    rendered. Indexes in the returned row match `group_stays`.
+    """
+    duplicate_marker = (
+        "CASE WHEN d.duplicate_drop_row THEN ' [FLAGGED DUPLICATE ROW]' ELSE '' END"
+        if "duplicate_drop_row" in present
+        else "''"
+    )
+    return f"""
+           {optional_column('stay_ID', present)} AS stay_id,
+           d.book_in_date_time,
+           {facility_display_expr(duplicate_marker)} AS facility_display,
+           d.book_out_date_time,
+           {optional_column('detention_release_reason', present)} AS release_reason,
+           {optional_column('final_program', present)} AS entry_program,
+           {optional_column('book_in_aor', present)} AS entry_aor,
+           {optional_column('stint_ID', present)} AS stint_id,
+           {optional_column('detainee_classification', present)} AS classification,
+           {optional_column('case_status', present)} AS case_status,
+           {optional_column('case_threat_level', present)} AS threat_level,
+           {optional_column('final_order_yes_no', present)} AS final_order,
+           {optional_column('final_order_date', present)} AS final_order_date,
+           {optional_column('departed_date', present)} AS departed,
+           {optional_column('final_charge', present)} AS final_charge"""
+
+
+def detention_sources() -> str:
+    """The FROM/JOIN that supplies detention stints and canonical facility names."""
+    return """
+            FROM read_parquet(?) d
+            LEFT JOIN (
+                SELECT detention_facility_code, max(name) AS name
+                FROM read_parquet(?)
+                WHERE detention_facility_code IS NOT NULL
+                GROUP BY detention_facility_code
+            ) f USING (detention_facility_code)"""
+
+
+def detention_order_by(present: set[str]) -> str:
+    row_order = "d.row_original NULLS LAST" if "row_original" in present else "facility_display"
+    return (
+        "d.book_in_date_time NULLS LAST, "
+        "d.book_out_date_time NULLS LAST, "
+        f"facility_display NULLS LAST, {row_order}"
+    )
+
+
+def arrest_location_expr() -> str:
+    """The best available arrest location, in order of decreasing precision."""
+    return (
+        "coalesce("
+        "nullif(trim(apprehension_site_landmark), ''), "
+        "nullif(trim(apprehension_state_filled_in), ''), "
+        "nullif(trim(apprehension_aor), '')"
+        ") AS arrest_location"
+    )
+
+
+def parse_identifier(value: str) -> tuple[str, str | None]:
+    """Split an identifier into its base and any `_`-suffix.
+
+    `stay_ID` values carry a `base_YYYY-MM-DD HH:MM:SS` suffix and `stint_ID`
+    values a `base_YYYY-MM-DD HH:MM:SS_code` suffix. The base alone is what the
+    tables key on; the suffix identifies one stay.
+    """
+    stripped = value.strip()
+    base, sep, suffix = stripped.partition("_")
+    if not base:
+        raise LookupError("The identifier cannot be empty.")
+    return base, (suffix if sep else None)
+
+
 def fetch_pathway(
     identifier_input: str,
     arrests_file: Path = DEFAULT_ARRESTS_FILE,
@@ -249,7 +385,7 @@ def fetch_pathway(
     facilities_file: Path = DEFAULT_FACILITIES_FILE,
 ) -> Pathway:
     """Return every recorded stay for one identifier, oldest first."""
-    identifier = normalize_identifier(identifier_input)
+    identifier, suffix = parse_identifier(identifier_input)
     validate_file(arrests_file, "arrests")
     validate_file(detention_file, "detention")
     validate_file(facilities_file, "facilities")
@@ -258,14 +394,10 @@ def fetch_pathway(
     connection.execute("SET TimeZone = 'UTC'")
     try:
         arrest_rows = connection.execute(
-            """
+            f"""
             SELECT apprehension_date_time,
                    apprehension_date,
-                   coalesce(
-                       nullif(trim(apprehension_site_landmark), ''),
-                       nullif(trim(apprehension_state_filled_in), ''),
-                       nullif(trim(apprehension_aor), '')
-                   ) AS arrest_location
+                   {arrest_location_expr()}
             FROM read_parquet(?)
             WHERE unique_identifier = ?
             ORDER BY apprehension_date_time NULLS LAST,
@@ -275,54 +407,12 @@ def fetch_pathway(
         ).fetchall()
 
         present = available_columns(connection, detention_file)
-        # Rows the Deportation Data Project flags as duplicates are kept and
-        # labelled rather than dropped, so a stint count here can be compared
-        # against its published figures instead of quietly diverging.
-        duplicate_marker = (
-            "CASE WHEN d.duplicate_drop_row THEN ' [FLAGGED DUPLICATE ROW]' ELSE '' END"
-            if "duplicate_drop_row" in present
-            else "''"
-        )
         stint_rows = connection.execute(
             f"""
-            SELECT {optional_column('stay_ID', present)} AS stay_id,
-                   d.book_in_date_time,
-                   concat(
-                       CASE
-                           WHEN d.detention_facility_code IS NOT NULL THEN
-                               concat(
-                                   coalesce(
-                                       nullif(trim(f.name), ''),
-                                       nullif(trim(d.detention_facility), ''),
-                                       'UNKNOWN DETENTION CENTER'
-                                   ),
-                                   ':',
-                                   d.detention_facility_code
-                               )
-                           ELSE coalesce(
-                               nullif(trim(f.name), ''),
-                               nullif(trim(d.detention_facility), ''),
-                               'UNKNOWN DETENTION CENTER'
-                           )
-                       END,
-                       {duplicate_marker}
-                   ) AS facility_display,
-                   d.book_out_date_time,
-                   {optional_column('detention_release_reason', present)} AS release_reason,
-                   {optional_column('final_program', present)} AS entry_program,
-                   {optional_column('book_in_aor', present)} AS entry_aor
-            FROM read_parquet(?) d
-            LEFT JOIN (
-                SELECT detention_facility_code, max(name) AS name
-                FROM read_parquet(?)
-                WHERE detention_facility_code IS NOT NULL
-                GROUP BY detention_facility_code
-            ) f USING (detention_facility_code)
+            SELECT {detention_select(present)}
+            {detention_sources()}
             WHERE d.unique_identifier = ?
-            ORDER BY d.book_in_date_time NULLS LAST,
-                     d.book_out_date_time NULLS LAST,
-                     facility_display NULLS LAST,
-                     {'d.row_original NULLS LAST' if 'row_original' in present else 'facility_display'}
+            ORDER BY {detention_order_by(present)}
             """,
             [str(detention_file), str(facilities_file), identifier],
         ).fetchall()
@@ -339,7 +429,37 @@ def fetch_pathway(
 
     stays = group_stays(stint_rows)
     stays, unmatched = pair_arrests_with_stays(arrests, stays)
-    return Pathway(identifier, stays, unmatched)
+    focus = focus_stay_id(stays, identifier_input.strip()) if suffix else None
+    return Pathway(identifier, stays, unmatched, focus_stay_id=focus)
+
+
+def focus_stay_id(stays: Sequence[Stay], full_value: str) -> str | None:
+    """Return the stay_ID that a suffixed input names, if it exists.
+
+    `full_value` is the identifier exactly as passed in, including any
+    `_YYYY-MM-DD HH:MM:SS` stay suffix or `_..._code` stint suffix, because a
+    stay_ID is `base_suffix` and only the complete value identifies one stay.
+    """
+    for stay in stays:
+        if stay.stay_id == full_value:
+            return stay.stay_id
+        for stint_id in stay.stint_ids:
+            if stint_id == full_value:
+                return stay.stay_id
+    return None
+
+
+def summary_from_row(row: Sequence) -> StaySummary:
+    """Collect the named fields of one stint for the stay-level summary."""
+    return StaySummary(
+        classification=row[8],
+        case_status=row[9],
+        threat_level=row[10],
+        final_order=row[11],
+        final_order_date=row[12],
+        departed=row[13],
+        final_charge=row[14],
+    )
 
 
 def group_stays(stint_rows: Sequence[tuple]) -> list[Stay]:
@@ -365,6 +485,14 @@ def group_stays(stint_rows: Sequence[tuple]) -> list[Stay]:
                 entry_program=members[0][5],
                 entry_aor=members[0][6],
                 release_reason=last[4],
+                stint_ids=tuple(row[7] for row in members),
+                all_programs=tuple(
+                    dict.fromkeys(row[5] for row in members if row[5])
+                ),
+                all_aors=tuple(
+                    dict.fromkeys(row[6] for row in members if row[6])
+                ),
+                summary=summary_from_row(last),
             )
         )
     return sorted(stays, key=lambda stay: (stay.start is None, stay.start or 0))
@@ -382,22 +510,20 @@ def pair_arrests_with_stays(
 
     Arrests that open no recorded stay, and stays that no arrest explains, are
     both reported rather than being forced together.
-    """
-    if len(arrests) == 1 and len(stays) == 1:
-        only = stays[0]
-        return [
-            Stay(
-                only.stay_id,
-                arrests[0],
-                only.rows,
-                only.entry_program,
-                only.entry_aor,
-                only.release_reason,
-            )
-        ], []
 
+    The same time check governs a lone arrest with a lone stay. A single arrest
+    logged years after a stay's first book-in did not open that stay, and pairing
+    it unconditionally made the tool print a misleading DISCREPANCY and imply a
+    causal link the data does not support.
+
+    Claims are consumed in stay order: once a stay has taken the latest arrest
+    before its book-in, an *older* arrest can never open a later stay. A stale
+    arrest left over after an earlier stay already claimed a newer one is left
+    unmatched rather than being dumped on an unrelated later stay.
+    """
     remaining = list(arrests)
     paired: dict[int, ArrestEvent] = {}
+    previous_claim: datetime | None = None
     for index, stay in enumerate(stays):
         if stay.start is None:
             continue
@@ -405,13 +531,16 @@ def pair_arrests_with_stays(
         candidates = [
             arrest
             for arrest in remaining
-            if arrest.moment is not None and arrest.moment <= latest_allowed
+            if arrest.moment is not None
+            and arrest.moment <= latest_allowed
+            and (previous_claim is None or arrest.moment > previous_claim)
         ]
         if not candidates:
             continue
         chosen = max(candidates, key=lambda arrest: arrest.moment)
         paired[index] = chosen
         remaining.remove(chosen)
+        previous_claim = chosen.moment
 
     unmatched = remaining
 
@@ -423,6 +552,10 @@ def pair_arrests_with_stays(
             stay.entry_program,
             stay.entry_aor,
             stay.release_reason,
+            stay.stint_ids,
+            stay.all_programs,
+            stay.all_aors,
+            stay.summary,
         )
         for index, stay in enumerate(stays)
     ]
@@ -443,8 +576,8 @@ def format_timeline(rows: Sequence[DetentionRow]) -> str:
 
         segment = (
             f"[Book-in: {format_timestamp(book_in, 'book-in')}]"
-            f"[Book-out: {format_timestamp(book_out, 'book-out')}], "
-            f"{clean_location(location)}"
+            f"[Book-out: {format_timestamp(book_out, 'book-out')}]"
+            f"[Facility: {clean_location(location)}]"
         )
         if warnings:
             warning_text = "; ".join(warnings)
@@ -462,7 +595,6 @@ def format_timeline(rows: Sequence[DetentionRow]) -> str:
 def format_full_timeline(
     arrest: ArrestEvent | None,
     rows: Sequence[DetentionRow],
-    entry_note: str = NO_ARREST_NOTE,
 ) -> str:
     """Render one stay: its opening event, then every stint in order.
 
@@ -470,7 +602,7 @@ def format_full_timeline(
     here, so an unrelated earlier stay can never trigger a false discrepancy.
     """
     if arrest is None:
-        return f"{entry_note}-> {format_timeline(rows)}"
+        return f"{NO_ARREST_NOTE} -> {format_timeline(rows)}"
 
     warnings = []
     first_book_in = next((row[0] for row in rows if row[0] is not None), None)
@@ -496,8 +628,8 @@ def format_full_timeline(
             f"(DISCREPANCY: {'; '.join(warnings)}) {arrest_segment}"
         )
     if not rows:
-        return f"{arrest_segment}-> NO DETENTION RECORD IN THIS DATASET"
-    return f"{arrest_segment}-> {format_timeline(rows)}"
+        return f"{arrest_segment} -> NO DETENTION RECORD IN THIS DATASET"
+    return f"{arrest_segment} -> {format_timeline(rows)}"
 
 
 def format_gap(previous: Stay, current: Stay) -> str:
@@ -513,8 +645,63 @@ def format_gap(previous: Stay, current: Stay) -> str:
     return f"=== NOT IN ICE CUSTODY FOR {span} ==="
 
 
+def format_stay_fields(stay: Stay) -> str:
+    """Render the named stint fields for a stay, when the data carries them.
+
+    Every label names a field in the source data rather than narrating an event.
+    `final_program` is the program of record for the case; it does not state
+    which agency made an apprehension, and the source data has no field that
+    does. The first stint's values are always named so a program such as ERO or
+    Border Patrol is visible even when an arrest record exists; if later stints
+    disagree, the differing values are listed so a reader is not told only the
+    opening one. The last stint's record state is quoted verbatim.
+    """
+    lines = []
+    first = []
+    if stay.entry_program:
+        first.append(f"final_program: {stay.entry_program}")
+    if stay.entry_aor:
+        first.append(f"book_in_aor: {stay.entry_aor}")
+    if first:
+        lines.append("[first stint — " + "; ".join(first) + "]")
+
+    differing = []
+    for value in differing_values(stay.entry_program, stay.all_programs):
+        differing.append(f"final_program: {value}")
+    for value in differing_values(stay.entry_aor, stay.all_aors):
+        differing.append(f"book_in_aor: {value}")
+    if differing:
+        lines.append("[stint fields — " + "; ".join(differing) + "]")
+
+    if stay.summary is not None and stay.summary.present:
+        lines.append("[last stint — " + "; ".join(stay.summary.present) + "]")
+    return "\n".join(lines)
+
+
+def differing_values(entry: str | None, all_values: tuple[str, ...]) -> list[str]:
+    """Distinct non-empty values in `all_values` other than the first stint's."""
+    seen: list[str] = []
+    for value in all_values:
+        if value and value != entry and value not in seen:
+            seen.append(value)
+    return seen
+
+
+def format_context_stay(stay: Stay) -> str:
+    """One line for a stay that is context to the requested stay."""
+    start = format_timestamp(stay.start, "book-in") if stay.start else "UNKNOWN"
+    end = format_timestamp(stay.end, "book-out") if stay.end else "UNKNOWN"
+    label = clean_location(stay.rows[0][1]) if stay.rows else "UNKNOWN DETENTION CENTER"
+    return f"  [CONTEXT — another stay for this person: {start} -> {end}, {label}]"
+
+
 def format_pathway(pathway: Pathway) -> str:
-    """Render every stay, keeping separate detentions visibly separate."""
+    """Render every stay, keeping separate detentions visibly separate.
+
+    When the lookup was scoped by a `stay_ID` or `stint_ID` suffix, that stay is
+    rendered in full and the person's other stays are collapsed to one-line
+    context so the answer matches the question asked.
+    """
     if not pathway.stays:
         return "\n".join(
             format_full_timeline(arrest, []) for arrest in pathway.arrests_without_stay
@@ -522,15 +709,33 @@ def format_pathway(pathway: Pathway) -> str:
 
     total = len(pathway.stays)
     parts: list[str] = []
-    previous: Stay | None = None
-    for number, stay in enumerate(pathway.stays, start=1):
-        if previous is not None:
-            parts.append(format_gap(previous, stay))
-        rendered = format_full_timeline(stay.arrest, stay.rows, stay.entry_note)
-        # A lone stay needs no label; numbering only helps when stays must be
-        # told apart.
-        parts.append(rendered if total == 1 else f"[STAY {number} of {total}] {rendered}")
-        previous = stay
+    if pathway.focus_stay_id is not None:
+        for number, stay in enumerate(pathway.stays, start=1):
+            if stay.stay_id == pathway.focus_stay_id:
+                parts.append(
+                    f"[STAY {number} of {total}] "
+                    f"{format_full_timeline(stay.arrest, stay.rows)}"
+                )
+                fields = format_stay_fields(stay)
+                if fields:
+                    parts.append(fields)
+            else:
+                parts.append(format_context_stay(stay))
+    else:
+        previous: Stay | None = None
+        for number, stay in enumerate(pathway.stays, start=1):
+            if previous is not None:
+                parts.append(format_gap(previous, stay))
+            rendered = format_full_timeline(stay.arrest, stay.rows)
+            # A lone stay needs no label; numbering only helps when stays must be
+            # told apart.
+            parts.append(
+                rendered if total == 1 else f"[STAY {number} of {total}] {rendered}"
+            )
+            fields = format_stay_fields(stay)
+            if fields:
+                parts.append(fields)
+            previous = stay
 
     for arrest in pathway.arrests_without_stay:
         parts.append(
@@ -590,6 +795,8 @@ def main() -> int:
         return 1
 
     print(f"Identifier: {pathway.identifier}")
+    if pathway.focus_stay_id is not None:
+        print(f"Scoped to stay: {pathway.focus_stay_id}")
     print(f"Stays: {len(pathway.stays)}   Detention rows: {pathway.row_count}")
     if pathway.arrests_without_stay:
         print(f"Arrests with no recorded detention: {len(pathway.arrests_without_stay)}")
