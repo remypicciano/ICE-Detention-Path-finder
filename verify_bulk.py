@@ -49,13 +49,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import sys
 import time
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from typing import Sequence
+from typing import Any
 
 import duckdb
 
@@ -68,8 +67,8 @@ from ice_detention_pathway import (
     LookupError,
     Pathway,
     Stay,
-    available_columns,
     arrest_location_expr,
+    available_columns,
     detention_order_by,
     detention_select,
     detention_sources,
@@ -214,7 +213,7 @@ def bulk_pass(
     keep: set[str],
     limit: int | None,
     findings: Findings,
-) -> tuple[dict[str, PersonBulk], Counter, str, set[str]]:
+) -> tuple[dict[str, PersonBulk], Counter[str], str, set[str]]:
     """Run the real grouping and pairing over every person; return results."""
     present = available_columns(connection, detention_file)
     dup_column = (
@@ -234,12 +233,12 @@ def bulk_pass(
     arrests = load_arrests(connection, arrests_file)
     cursor = connection.execute(sql, [str(detention_file), str(facilities_file)])
 
-    counts: Counter = Counter()
+    counts: Counter[str] = Counter()
     kept: dict[str, PersonBulk] = {}
     digest = hashlib.sha256()
 
     current_id: str | None = None
-    current_rows: list[tuple] = []
+    current_rows: list[tuple[Any, ...]] = []
 
     def flush() -> None:
         nonlocal current_id, current_rows
@@ -307,7 +306,7 @@ def bulk_pass(
         rendered = format_pathway(Pathway(current_id, person_stays, unmatched))
         if format_pathway(Pathway(current_id, person_stays, unmatched)) != rendered:
             findings.check("C5 deterministic rendering", False, current_id)
-        digest.update(f"{current_id}\0{rendered}\0".encode("utf-8"))
+        digest.update(f"{current_id}\0{rendered}\0".encode())
 
         if current_id in keep:
             kept[current_id] = PersonBulk(current_id, person_stays, unmatched)
@@ -325,7 +324,7 @@ def bulk_pass(
             current_rows.append(row[1:])
     flush()
 
-    return kept, counts, digest.hexdigest(), present  # type: ignore[return-value]
+    return kept, counts, digest.hexdigest(), present
 
 
 def format_stamp(moment: datetime) -> str:
@@ -364,7 +363,7 @@ def cross_check_sample(
             False,
             f"{mismatches} of {len(sample)} sampled identifiers disagreed",
         )
-def compare_person(bulk: PersonBulk, pathway) -> list[str]:
+def compare_person(bulk: PersonBulk, pathway: Pathway) -> list[str]:
     """Return a list of differences between the bulk and per-identifier results."""
     problems: list[str] = []
     if pathway.identifier != bulk.identifier:
@@ -372,7 +371,7 @@ def compare_person(bulk: PersonBulk, pathway) -> list[str]:
     if len(pathway.stays) != len(bulk.stays):
         problems.append(f"stay count {len(pathway.stays)} != {len(bulk.stays)}")
         return problems
-    for bulk_stay, fetched_stay in zip(bulk.stays, pathway.stays):
+    for bulk_stay, fetched_stay in zip(bulk.stays, pathway.stays, strict=True):
         if bulk_stay.stay_id != fetched_stay.stay_id:
             problems.append(f"stay id {fetched_stay.stay_id} != {bulk_stay.stay_id}")
         if len(bulk_stay.rows) != len(fetched_stay.rows):
@@ -432,9 +431,9 @@ def stays_file_reconciliation(
         [str(detention_file), str(stays_file)],
     ).fetchall()
 
-    mismatches: Counter = Counter()
+    mismatches: Counter[str] = Counter()
     total = len(rows)
-    for stay_id, n_stints, stay_in, stay_out, nondup, min_in, max_out, any_open in rows:
+    for _stay_id, n_stints, stay_in, stay_out, nondup, min_in, max_out, any_open in rows:
         if nondup != n_stints:
             mismatches["count"] += 1
         else:
@@ -544,11 +543,12 @@ def delimiter_contract(
         bad = connection.execute(
             f"SELECT count(*) FROM read_parquet(?) WHERE {where}",
             [str(file)] + [pattern] * len(columns),
-        ).fetchone()[0]
-        total_bad += bad
-        if bad:
+        ).fetchone()
+        bad_count = bad[0] if bad else 0
+        total_bad += bad_count
+        if bad_count:
             findings.check(
-                "C10 delimiter contract", False, f"{label}: {bad} row(s) match"
+                "C10 delimiter contract", False, f"{label}: {bad_count} row(s) match"
             )
 
     where = " OR ".join(
@@ -563,12 +563,12 @@ def delimiter_contract(
     bad = connection.execute(
         f"SELECT count(*) FROM read_parquet(?) WHERE {where}",
         [str(arrests_file)] + ["[\\[\\]]|->"] * 4,
-    ).fetchone()[0]
-    total_bad += bad
-    if bad:
+    ).fetchone()
+    bad_count = bad[0] if bad else 0
+    if bad_count:
         findings.check(
             "C10 delimiter contract", False,
-            f"arrest location fields: {bad} row(s) match",
+            f"arrest location fields: {bad_count} row(s) match",
         )
 
     if total_bad == 0:
@@ -609,6 +609,8 @@ def data_scope(
         """,
         [str(detention_file)],
     ).fetchone()
+    if window is None:
+        raise RuntimeError("Data-window query returned no row.")
     min_in, max_in, min_out, max_out, open_stints, null_stay = window
     print("\nDATA WINDOW (detention stints)")
     print(f"  book-in   {format_stamp(min_in)}  ->  {format_stamp(max_in)}")
@@ -620,7 +622,7 @@ def data_scope(
     )
 
 
-def report(findings: Findings, counts: Counter, digest: str, elapsed: float) -> int:
+def report(findings: Findings, counts: Counter[str], digest: str, elapsed: float) -> int:
     print(RULE)
     print(f"BULK VERIFICATION  —  {time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(RULE)

@@ -21,12 +21,11 @@ import ssl
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Sequence
 
 import pyarrow.parquet as pq
-
 
 CONFIG_FILENAME = "data-sources.json"
 EXAMPLE_CONFIG_FILENAME = "data-sources.example.json"
@@ -149,7 +148,7 @@ def validate_parquet(path: Path, filename: str) -> int:
         )
     if rows == 0:
         raise DownloadError(f"{filename} downloaded with zero rows.")
-    return rows
+    return int(rows)
 
 
 def download_one(

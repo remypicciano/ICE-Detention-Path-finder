@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Sequence
+from typing import Any
 
 import duckdb
-
 
 DEFAULT_ARRESTS_FILE = Path("arrests-latest.parquet")
 DEFAULT_DETENTION_FILE = Path("detention-stints-latest.parquet")
@@ -213,10 +213,11 @@ def format_timestamp(value: datetime | None, event_label: str) -> str:
         if event_label == "book-out":
             return "UNKNOWN - CURRENTLY HELD (?)"
         return "UNKNOWN UTC"
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    else:
-        value = value.astimezone(timezone.utc)
+    value = (
+        value.replace(tzinfo=UTC)
+        if value.tzinfo is None
+        else value.astimezone(UTC)
+    )
     return f"{value:%Y-%m-%d %H:%M:%S} UTC"
 
 
@@ -234,8 +235,8 @@ def clean_arrest_location(value: str | None) -> str:
 
 def utc_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def exceeds_gap(earlier: datetime, later: datetime) -> bool:
@@ -449,7 +450,7 @@ def focus_stay_id(stays: Sequence[Stay], full_value: str) -> str | None:
     return None
 
 
-def summary_from_row(row: Sequence) -> StaySummary:
+def summary_from_row(row: Sequence[Any]) -> StaySummary:
     """Collect the named fields of one stint for the stay-level summary."""
     return StaySummary(
         classification=row[8],
@@ -462,10 +463,10 @@ def summary_from_row(row: Sequence) -> StaySummary:
     )
 
 
-def group_stays(stint_rows: Sequence[tuple]) -> list[Stay]:
+def group_stays(stint_rows: Sequence[tuple[Any, ...]]) -> list[Stay]:
     """Group stint rows into stays by stay_ID, oldest stay first."""
     order: list[str | None] = []
-    grouped: dict[str | None, list[tuple]] = {}
+    grouped: dict[str | None, list[tuple[Any, ...]]] = {}
     for row in stint_rows:
         stay_id = row[0]
         if stay_id not in grouped:
@@ -537,7 +538,7 @@ def pair_arrests_with_stays(
         ]
         if not candidates:
             continue
-        chosen = max(candidates, key=lambda arrest: arrest.moment)
+        chosen = max(candidates, key=lambda arrest: arrest.moment or datetime.min)
         paired[index] = chosen
         remaining.remove(chosen)
         previous_claim = chosen.moment
@@ -567,12 +568,18 @@ def format_timeline(rows: Sequence[DetentionRow]) -> str:
     previous_book_out: datetime | None = None
     for book_in, location, book_out in rows:
         warnings = []
-        if book_in is not None and book_out is not None:
-            if exceeds_gap(utc_datetime(book_out), utc_datetime(book_in)):
-                warnings.append("book-out is before book-in")
-        if book_in is not None and previous_book_out is not None:
-            if exceeds_gap(utc_datetime(book_in), utc_datetime(previous_book_out)):
-                warnings.append("detention begins before previous book-out")
+        if (
+            book_in is not None
+            and book_out is not None
+            and exceeds_gap(utc_datetime(book_out), utc_datetime(book_in))
+        ):
+            warnings.append("book-out is before book-in")
+        if (
+            book_in is not None
+            and previous_book_out is not None
+            and exceeds_gap(utc_datetime(book_in), utc_datetime(previous_book_out))
+        ):
+            warnings.append("detention begins before previous book-out")
 
         segment = (
             f"[Book-in: {format_timestamp(book_in, 'book-in')}]"
@@ -584,11 +591,14 @@ def format_timeline(rows: Sequence[DetentionRow]) -> str:
             segment = f"(DISCREPANCY: {warning_text}) {segment}"
         segments.append(segment)
 
-        if book_out is not None:
-            if previous_book_out is None or utc_datetime(book_out) > utc_datetime(
-                previous_book_out
-            ):
-                previous_book_out = book_out
+        if (
+            book_out is not None
+            and (
+                previous_book_out is None
+                or utc_datetime(book_out) > utc_datetime(previous_book_out)
+            )
+        ):
+            previous_book_out = book_out
     return " -> ".join(segments)
 
 

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-
 
 DEFAULT_PREVIEW_ROWS = 5
 MAX_PREVIEW_ROWS = 100

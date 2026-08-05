@@ -15,10 +15,10 @@ import argparse
 import hashlib
 import html
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Sequence
 
 import duckdb
 
@@ -41,7 +41,6 @@ from ice_detention_pathway import (
     utc_datetime,
     validate_file,
 )
-
 
 BAR_WIDTH = 56
 RULE = "=" * 78
@@ -268,7 +267,7 @@ def assemble_stays(
             all(s.book_in is None for s in members),
             min(
                 (utc_datetime(s.book_in) for s in members if s.book_in),
-                default=datetime.max.replace(tzinfo=timezone.utc),
+                default=datetime.max.replace(tzinfo=UTC),
             ),
         )
     )
@@ -291,7 +290,7 @@ def assemble_stays(
     by_event = {id(arrest.event): arrest for arrest in arrests}
     stays: list[StayRecord] = []
     claimed: set[int] = set()
-    for members, core_stay in zip(groups, paired):
+    for members, core_stay in zip(groups, paired, strict=True):
         record = None
         if core_stay.arrest is not None:
             record = by_event[id(core_stay.arrest)]
@@ -316,13 +315,15 @@ def check_consistency(stays: Sequence[StayRecord]) -> list[tuple[str, str, str]]
     if moment is not None and earliest is not None:
         if moment > earliest:
             findings.append(
-                (
-                    "identifier-wide",
-                    "FLAGS",
-                    f"first arrest {format_timestamp(moment, 'arrest')} is after the "
-                    f"earliest book-in of any stay "
-                    f"({format_timestamp(earliest, 'book-in')}) — this comparison "
-                    "spans unrelated stays and is shown only for contrast",
+                    (
+                        "identifier-wide",
+                        "FLAGS",
+                        (
+                            f"first arrest {format_timestamp(moment, 'arrest')} is after the "
+                            f"earliest book-in of any stay "
+                            f"({format_timestamp(earliest, 'book-in')}) — this comparison "
+                            "spans unrelated stays and is shown only for contrast"
+                        ),
                 )
             )
         else:
@@ -345,57 +346,71 @@ def check_consistency(stays: Sequence[StayRecord]) -> list[tuple[str, str, str]]
             continue
         if exceeds_gap(stay.start, arrest_moment):
             findings.append(
-                (
-                    f"stay {number}",
-                    "FLAGS",
-                    f"arrest is {duration_text(stay.start, arrest_moment)} after this "
-                    "stay's own first book-in",
-                )
+                    (
+                        f"stay {number}",
+                        "FLAGS",
+                        (
+                            f"arrest is {duration_text(stay.start, arrest_moment)} after this "
+                            "stay's own first book-in"
+                        ),
+                    )
             )
         elif arrest_moment > stay.start:
             findings.append(
-                (
-                    f"stay {number}",
-                    "clean",
-                    f"arrest is {duration_text(stay.start, arrest_moment)} after "
-                    f"book-in — under the {DISCREPANCY_MINIMUM_GAP.days}-day "
-                    "threshold, treated as filing order",
-                )
+                    (
+                        f"stay {number}",
+                        "clean",
+                        (
+                            f"arrest is {duration_text(stay.start, arrest_moment)} after "
+                            f"book-in — under the {DISCREPANCY_MINIMUM_GAP.days}-day "
+                            "threshold, treated as filing order"
+                        ),
+                    )
             )
         else:
             findings.append(
-                (
-                    f"stay {number}",
-                    "clean",
-                    f"arrest precedes its stay's first book-in by "
-                    f"{duration_text(arrest_moment, stay.start)}",
-                )
+                    (
+                        f"stay {number}",
+                        "clean",
+                        (
+                            f"arrest precedes its stay's first book-in by "
+                            f"{duration_text(arrest_moment, stay.start)}"
+                        ),
+                    )
             )
 
     for stint in all_stints:
-        if stint.book_in and stint.book_out:
-            if exceeds_gap(utc_datetime(stint.book_out), utc_datetime(stint.book_in)):
-                findings.append(
-                    (
-                        "single stint",
-                        "FLAGS",
-                        f"{stint.facility}: book-out precedes book-in ({stint.citation})",
-                    )
+        if (
+            stint.book_in
+            and stint.book_out
+            and exceeds_gap(utc_datetime(stint.book_out), utc_datetime(stint.book_in))
+        ):
+            findings.append(
+                (
+                    "single stint",
+                    "FLAGS",
+                    f"{stint.facility}: book-out precedes book-in ({stint.citation})",
                 )
+            )
 
     for number, stay in enumerate(stays, start=1):
         previous: datetime | None = None
         for stint in stay.stints:
-            if stint.book_in and previous:
-                if exceeds_gap(utc_datetime(stint.book_in), previous):
-                    findings.append(
+            if (
+                stint.book_in
+                and previous
+                and exceeds_gap(utc_datetime(stint.book_in), previous)
+            ):
+                findings.append(
+                    (
+                        f"stay {number}",
+                        "FLAGS",
                         (
-                            f"stay {number}",
-                            "FLAGS",
                             f"{stint.facility} begins before the previous book-out "
-                            f"({stint.citation})",
-                        )
+                            f"({stint.citation})"
+                        ),
                     )
+                )
             if stint.book_out:
                 book_out = utc_datetime(stint.book_out)
                 previous = book_out if previous is None else max(previous, book_out)
@@ -424,7 +439,7 @@ def time_window(stays: Sequence[StayRecord]) -> tuple[datetime, datetime]:
         (utc_datetime(s.book_in) for stay in stays for s in stay.stints if s.book_in),
         default=None,
     )
-    window_start = min(starts) if starts else datetime.now(timezone.utc)
+    window_start = min(starts) if starts else datetime.now(UTC)
     candidates = [moment for moment in (*ends, latest_in) if moment]
     window_end = max(candidates) if candidates else window_start + timedelta(days=1)
     if window_end <= window_start:
