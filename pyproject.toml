@@ -21,6 +21,8 @@ dependencies = [
 dev = [
   "pyinstaller==6.21.0",
   "pytest==9.1.1",
+  "ruff==0.16.1",
+  "mypy==2.3.0",
 ]
 
 [project.scripts]
@@ -45,3 +47,20 @@ py-modules = [
 [tool.pytest.ini_options]
 testpaths = ["."]
 python_files = ["test_*.py"]
+
+[tool.ruff]
+target-version = "py311"
+src = ["."]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ISC"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["ice_detention_pathway.py", "fetch_data.py", "verify_bulk.py", "q.py"]
+[[tool.mypy.overrides]]
+module = ["pyarrow.*", "certifi", "duckdb"]
+ignore_missing_imports = true

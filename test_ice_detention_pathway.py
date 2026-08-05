@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import duckdb
 import pytest
@@ -177,12 +177,12 @@ def test_format_timestamp_converts_to_utc() -> None:
 def test_format_timeline_keeps_each_row_as_a_segment() -> None:
     rows = [
         (
-            datetime(2024, 1, 2, 10, 0, tzinfo=timezone.utc),
+            datetime(2024, 1, 2, 10, 0, tzinfo=UTC),
             "Center A",
-            datetime(2024, 1, 3, 11, 0, tzinfo=timezone.utc),
+            datetime(2024, 1, 3, 11, 0, tzinfo=UTC),
         ),
         (
-            datetime(2024, 2, 4, 12, 0, tzinfo=timezone.utc),
+            datetime(2024, 2, 4, 12, 0, tzinfo=UTC),
             "Center B",
             None,
         ),
@@ -400,15 +400,15 @@ def test_unknown_identifier_still_fails(tmp_path) -> None:
 
 def test_format_full_timeline_marks_impossible_arrest_chronology() -> None:
     arrest = ArrestEvent(
-        datetime(2025, 1, 2, 12, 0, tzinfo=timezone.utc),
+        datetime(2025, 1, 2, 12, 0, tzinfo=UTC),
         None,
         "Arrest Place",
     )
     rows = [
         (
-            datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
             "Center",
-            datetime(2025, 1, 3, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 3, 12, 0, tzinfo=UTC),
         )
     ]
 
@@ -422,13 +422,13 @@ def test_format_full_timeline_marks_impossible_arrest_chronology() -> None:
 def test_sub_day_arrest_inversion_is_not_flagged() -> None:
     """Paperwork filed hours after booking is not impossible chronology."""
     arrest = ArrestEvent(
-        datetime(2025, 1, 1, 14, 0, tzinfo=timezone.utc), None, "Arrest Place"
+        datetime(2025, 1, 1, 14, 0, tzinfo=UTC), None, "Arrest Place"
     )
     rows = [
         (
-            datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
             "Center",
-            datetime(2025, 1, 3, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 3, 12, 0, tzinfo=UTC),
         )
     ]
 
@@ -437,13 +437,13 @@ def test_sub_day_arrest_inversion_is_not_flagged() -> None:
 
 def test_day_scale_arrest_inversion_is_still_flagged() -> None:
     arrest = ArrestEvent(
-        datetime(2025, 1, 3, 12, 0, tzinfo=timezone.utc), None, "Arrest Place"
+        datetime(2025, 1, 3, 12, 0, tzinfo=UTC), None, "Arrest Place"
     )
     rows = [
         (
-            datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
             "Center",
-            datetime(2025, 1, 5, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 5, 12, 0, tzinfo=UTC),
         )
     ]
 
@@ -455,14 +455,14 @@ def test_day_scale_arrest_inversion_is_still_flagged() -> None:
 def test_sub_day_overlap_between_stints_is_not_flagged() -> None:
     rows = [
         (
-            datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
             "Center A",
-            datetime(2025, 1, 3, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 3, 12, 0, tzinfo=UTC),
         ),
         (
-            datetime(2025, 1, 3, 6, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 3, 6, 0, tzinfo=UTC),
             "Center B",
-            datetime(2025, 1, 4, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 4, 12, 0, tzinfo=UTC),
         ),
     ]
 
@@ -472,14 +472,14 @@ def test_sub_day_overlap_between_stints_is_not_flagged() -> None:
 def test_day_scale_overlap_between_stints_is_flagged() -> None:
     rows = [
         (
-            datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
             "Center A",
-            datetime(2025, 1, 5, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 5, 12, 0, tzinfo=UTC),
         ),
         (
-            datetime(2025, 1, 3, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 3, 12, 0, tzinfo=UTC),
             "Center B",
-            datetime(2025, 1, 6, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 6, 12, 0, tzinfo=UTC),
         ),
     ]
 
@@ -489,9 +489,9 @@ def test_day_scale_overlap_between_stints_is_flagged() -> None:
 def test_sub_day_book_out_inversion_is_not_flagged() -> None:
     rows = [
         (
-            datetime(2025, 1, 2, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 2, 12, 0, tzinfo=UTC),
             "Center",
-            datetime(2025, 1, 2, 9, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 2, 9, 0, tzinfo=UTC),
         )
     ]
 
@@ -501,9 +501,9 @@ def test_sub_day_book_out_inversion_is_not_flagged() -> None:
 def test_format_timeline_marks_impossible_detention_dates() -> None:
     rows = [
         (
-            datetime(2025, 1, 2, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 2, 12, 0, tzinfo=UTC),
             "Center",
-            datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+            datetime(2025, 1, 1, 12, 0, tzinfo=UTC),
         )
     ]
 

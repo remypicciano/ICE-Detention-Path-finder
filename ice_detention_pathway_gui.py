@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import sys
 import threading
 import tkinter as tk
-import sys
 import uuid
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -19,7 +19,6 @@ from ice_detention_pathway import (
     format_pathway,
     override_pathway_arrest_location,
 )
-
 
 APP_NAME = "ICE Detention Pathway"
 APP_VERSION = "3.1.0"
