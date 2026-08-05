@@ -1,0 +1,44 @@
+name: Pull request
+title: "[PR]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for contributing. Before requesting review, please:
+        - Keep the change focused on one problem.
+        - Run `python -m pytest -q` locally.
+        - Confirm the change contains no real identifiers or datasets.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing what this changes and why.
+    validations:
+      required: true
+  - type: input
+    id: linked_issue
+    attributes:
+      label: Linked issue
+      description: Reference any issue this closes (e.g. "Closes #12").
+    validations:
+      required: false
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests
+      description: |
+        List the tests added or changed, and paste the result of
+        `python -m pytest -q`. If no behavior changed, say so explicitly.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I ran `python -m pytest -q` and all tests pass
+        - label: I updated the README or docs when user-facing behaviour changed
+        - label: This PR contains no real identifiers, generated pathways for real people, or datasets
+        - label: I followed the project's data-ethics rules in CONTRIBUTING.md
+    validations:
+      required: true

@@ -1,10 +1,13 @@
-# ICE Detention Pathway — v2
+# ICE Detention Pathway — architecture, data model, and v3 behavior
 
 > Reconstruct an anonymized person's recorded route through ICE custody, one
 > stay at a time, with every value traceable to the source row it came from.
 
-This document covers the v2 rewrite (releases 3.0.0 and 3.1.0). It supersedes
-`README.md` and is written to be attached to the GitHub release.
+This document is the in-depth technical companion to
+[`README.md`](../README.md). It explains why the v2/v3 rewrite exists, how the
+data model works, the exact machine-readable output grammar, and the behaviour
+changes between releases. It was originally the v2 release notes (releases
+3.0.0 and 3.1.0).
 
 ---
 

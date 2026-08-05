@@ -1,12 +1,22 @@
-# ICE Detention Pathway
+<p align="center">
+  <img src="assets/ice_cube.png" alt="ICE Detention Pathway" width="140">
+</p>
 
-> Reconstruct an anonymized person's recorded route through ICE custody—from
-> arrest through every known detention-facility transfer.
+<h1 align="center">ICE Detention Pathway</h1>
 
-[![Tests](https://github.com/remypicciano/ICE-Detention-Path-finder/actions/workflows/build-desktop.yml/badge.svg)](https://github.com/remypicciano/ICE-Detention-Path-finder/actions/workflows/build-desktop.yml)
-![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
-![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-555)
-![Data stays local](https://img.shields.io/badge/data-stays%20local-2E7D32)
+<p align="center">
+  Reconstruct an anonymized person's recorded route through ICE custody — from
+  arrest through every known detention-facility transfer.
+</p>
+
+<p align="center">
+  <a href="https://github.com/remypicciano/ICE-Detention-Path-finder/actions/workflows/ci.yml"><img src="https://github.com/remypicciano/ICE-Detention-Path-finder/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/License-MIT-2E7D32" alt="License: MIT">
+  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-555" alt="Platforms">
+  <img src="https://img.shields.io/badge/data-stays%20local-2E7D32" alt="Data stays local">
+  <img src="https://img.shields.io/badge/PRs-welcome-important" alt="PRs welcome">
+</p>
 
 ICE Detention Pathway turns linked Parquet records from the
 [Deportation Data Project](https://deportationdata.org/data/processed/ice.html)
@@ -19,62 +29,38 @@ A person may be detained more than once. Separate stays are reported separately,
 never chained into one pathway, because reading two detentions as continuous
 would overstate time in custody.
 
-This project is related to the Deportation Data Project and uses its published
-ICE exports as source data. It is not affiliated with the project or with ICE.
+- **Desktop app** for pasting an identifier and copying a clean timeline
+- **Terminal interface** for scripts and automation
+- **In-app dataset download** — one click fetches the current national files
+- **Provenance receipts** that trace every printed value to its source row
+- **Bulk verification** (C1–C10) that reconciles the whole national run against
+  the source data on every release
+- Runs 100% offline during lookups — the only network use is the optional
+  download button
 
-The project includes a desktop application, a terminal interface, a
-memory-efficient Parquet inspector, an evidence-receipt verifier, tests, and
-native build automation for macOS, Windows, and Linux.
+This project uses Deportation Data Project ICE exports as source data. It is
+independent and is not affiliated with the project or with ICE.
 
 ## What it produces
 
-```text
-arrest
-  → first detention facility
-  → transfer
-  → latest recorded facility
-```
-
-Example output (fabricated):
+The output is a structured, machine-readable text format: stints joined by
+` -> `, each stint a sequence of `[Book-in: …][Book-out: …][Facility: …]`
+blocks, one field line per stay. Example (fabricated):
 
 ```text
-2025-01-12 14:30:00 UTC, NEW YORK, NY-> [Book-in: 2025-01-12 18:10:00 UTC][Book-out: 2025-01-14 09:00:00 UTC], Facility A:AAA -> [Book-in: 2025-01-14 11:45:00 UTC][Book-out: UNKNOWN - CURRENTLY HELD (?)], Facility B:BBB
+[STAY 1 of 2] NO ARREST RECORD IN THIS DATASET -> [Book-in: 2024-09-16 17:56:00 UTC][Book-out: 2024-11-29 10:44:00 UTC][Facility: Montgomery Processing Center:MTGPCTX]
+[first stint — final_program: Border Patrol; book_in_aor: Houston Area of Responsibility]
+=== RELEASED (Paroled); NOT IN ICE CUSTODY FOR 396 days ===
+[STAY 2 of 2] 2025-12-30 10:36:35 UTC, NDD - 26 FEDERAL PLAZA NY, NY -> [Book-in: 2025-12-30 11:17:00 UTC][Book-out: 2025-12-30 18:25:00 UTC][Facility: NYC Hold Room:NYCHOLD] -> [Book-in: 2025-12-30 20:26:00 UTC][Book-out: UNKNOWN - CURRENTLY HELD (?)][Facility: MDC Brooklyn:BOPBRO]
+[last stint — classification: Low; case_status: ACTIVE; threat_level: NA; final_order: NO]
 ```
 
-### Highlights
-
-- Reconstructs all recorded facility stints for one anonymized identifier.
-- Groups stints into stays and keeps separate detentions visibly separate.
-- Reports people who have detention records but no ICE arrest record.
-- Handles people arrested more than once, pairing each arrest with its own stay.
-- Accepts base identifiers as well as suffixed stay and stint identifiers.
-- Normalizes timestamps to UTC and facility codes to canonical names.
-- Preserves questionable chronology and labels it with `DISCREPANCY`.
-- Marks a missing latest book-out as a possible current placement.
-- Keeps searches local: the application makes no network requests.
-- Supports an editable, clipboard-ready timeline in the desktop app.
+The exact grammar is specified in
+[`docs/architecture.md#14-machine-readable-output-format`](docs/architecture.md#14-machine-readable-output-format).
 
 ## Quick start
 
-### 1. Get the data
-
-Download the current Parquet datasets from the Deportation Data Project's
-[ICE data page](https://deportationdata.org/data/processed/ice.html) and place
-these files in the project directory:
-
-```text
-arrests-latest.parquet
-detention-stints-latest.parquet
-facilities-latest.parquet
-```
-
-Use the complete national files. Locally reduced copies silently remove people
-and stays, and no search result can reveal that something is missing.
-
-The datasets are intentionally excluded from Git and from application bundles.
-Keep the filenames exactly as shown.
-
-### 2. Install
+### 1. Install
 
 ```bash
 git clone https://github.com/remypicciano/ICE-Detention-Path-finder.git
@@ -84,12 +70,34 @@ source .venv/bin/activate
 python -m pip install -r requirements-lock.txt
 ```
 
-The lock file reproduces the tested Python 3.14 environment. The package itself
-supports Python 3.11 or newer. On macOS, the desktop interface also requires Tk:
+The lock file reproduces the tested Python 3.14 environment; the package itself
+supports Python 3.11 or newer. On macOS, the desktop interface also requires
+Tk:
 
 ```bash
 brew install python-tk@3.14
 ```
+
+### 2. Get the data
+
+Download the current national Parquet files from inside the app
+(**Download / Update Data…**), or from the terminal:
+
+```bash
+python fetch_data.py
+```
+
+This fetches `arrests-latest.parquet`, `detention-stints-latest.parquet`,
+`facilities-latest.parquet`, plus the optional
+`detention-stays-latest.parquet` and
+`joined-arrests-detention-stays-latest.parquet`. Every file is verified as
+readable Parquet with the expected columns before it replaces anything, so a
+failed download leaves your existing data untouched.
+
+Use the complete national files. Locally reduced copies silently remove people
+and stays, and no search result can reveal that something is missing. The
+datasets are excluded from Git and from application bundles; keep the filenames
+exactly as shown.
 
 ### 3. Run
 
@@ -105,16 +113,8 @@ Terminal interface:
 python ice_detention_pathway.py UNIQUE_IDENTIFIER
 ```
 
-You can point the terminal interface at files stored elsewhere:
-
-```bash
-python ice_detention_pathway.py UNIQUE_IDENTIFIER \
-  --arrests-file /path/to/arrests-latest.parquet \
-  --detention-file /path/to/detention-stints-latest.parquet \
-  --facilities-file /path/to/facilities-latest.parquet
-```
-
-Run `python ice_detention_pathway.py --help` for every option.
+Run `python ice_detention_pathway.py --help` for every option, including
+pointing the tool at data stored elsewhere.
 
 ## Desktop workflow
 
@@ -130,34 +130,34 @@ Run `python ice_detention_pathway.py --help` for every option.
 1. The input is normalized to the base identifier before its first underscore.
 2. Every detention stint for that identifier is joined to the facilities table
    and grouped into stays by `stay_ID`.
-3. Each stay takes the nearest arrest record preceding its first book-in. Stays
-   with no such record are labelled `NO ARREST RECORD IN THIS DATASET`, and
-   arrests that opened no recorded stay are reported separately.
+3. Each stay takes the nearest unclaimed arrest preceding its first book-in.
+   Stays with no such record are labelled
+   `NO ARREST RECORD IN THIS DATASET`, and arrests that opened no recorded stay
+   are reported separately.
 4. Stints are sorted chronologically within each stay. Stays are rendered
    separately, with the release reason and the gap between them.
 5. Impossible dates are retained and clearly labeled instead of silently fixed.
-
-Chronology warnings compare an arrest only against the stay it opened, so an
-unrelated earlier detention cannot trigger a false `DISCREPANCY`.
+   A chronology warning is only raised at a full-day gap, so the noise of
+   paperwork-ordering inversions doesn't drown out real contradictions.
 
 The lookup runs in an in-memory DuckDB database, which reads the Parquet files
 in place. Nothing is imported and the source files are never modified.
 
-### Multi-stay output
-
-```text
-[STAY 1 of 2] NO ARREST RECORD IN THIS DATASET (entered via Border Patrol, Houston Area of Responsibility)-> [Book-in: ...][Book-out: ...], Facility A:AAA
-=== RELEASED (Paroled); NOT IN ICE CUSTODY FOR 396 days ===
-[STAY 2 of 2] 2025-12-30 10:36:35 UTC, ARREST LOCATION-> [Book-in: ...][Book-out: UNKNOWN - CURRENTLY HELD (?)], Facility B:BBB
-```
-
 ### Verifying a result
 
 `verify_pathway.py` prints the source spreadsheet, sheet, and row behind every
-value in a pathway, so a reader can check it against the original ICE files:
+value in a pathway, plus SHA-256 prefixes of the input files:
 
 ```bash
 python verify_pathway.py UNIQUE_IDENTIFIER
+```
+
+`verify_bulk.py` applies the same grouping and pairing to every identifier in
+one streaming pass and checks C1–C10 invariants across the national data:
+
+```bash
+python verify_bulk.py                  # full pass + 1500-id cross-check
+python verify_bulk.py --skip-sample    # bulk checks only, faster
 ```
 
 ## Data interpretation and safety
@@ -167,9 +167,10 @@ deportation outcome or a real-time location. A missing book-out date means only
 that the source data has no later release or transfer recorded; the person may
 have since been moved, released, removed, or affected by a reporting delay.
 
-The Deportation Data Project notes that the source data comes from ICE through
-Freedom of Information Act requests, contains known limitations, and may be
-revised. Read its [ICE core data codebook](https://deportationdata.org/docs/ice/codebook)
+Absence of a record is not evidence of absence in reality. The Deportation Data
+Project notes that the source data comes from ICE through Freedom of
+Information Act requests, contains known limitations, and may be revised. Read
+its [ICE core data codebook](https://deportationdata.org/docs/ice/codebook)
 before drawing conclusions. Treat generated pathways as investigative leads,
 verify consequential claims against primary records, and handle even
 anonymized data responsibly.
@@ -179,8 +180,16 @@ Suggested data attribution:
 > Government data provided by ICE in response to a FOIA request, processed by
 > the Deportation Data Project, and analyzed with ICE Detention Pathway.
 
-This project is independent and is not affiliated with ICE or the Deportation
-Data Project.
+## Documentation
+
+- [`docs/architecture.md`](docs/architecture.md) — data model, release changes,
+  and the machine-readable output spec
+- [`AUDIT.md`](AUDIT.md) — known bugs and data issues, severity-ranked
+- [`BUILDING.md`](BUILDING.md) — native macOS / Windows / Linux builds
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — community guidelines
+- [`SECURITY.md`](SECURITY.md) — reporting vulnerabilities
+- [`LICENSE`](LICENSE) — MIT
 
 ## Development
 
@@ -197,18 +206,19 @@ Inspect a dataset without loading it in full:
 python parquet_viewer.py detention-stints-latest.parquet --rows 5
 ```
 
-See [BUILDING.md](BUILDING.md) for native application builds and platform
-troubleshooting. Contributions are welcome; start with
-[CONTRIBUTING.md](CONTRIBUTING.md).
-
 ## Project structure
 
 ```text
 ice_detention_pathway.py       Core query, stay grouping, and CLI
 ice_detention_pathway_gui.py   Tk desktop application
+fetch_data.py                  Downloads and validates the national datasets
 verify_pathway.py              Source-row provenance receipt for one identifier
+verify_bulk.py                 National bulk verification (C1–C10)
+q.py                           Ad-hoc SQL against the local Parquet files
 parquet_viewer.py              Bounded Parquet schema/row inspector
-ICEDetentionPathway.spec       Cross-platform PyInstaller definition
+data-sources.example.json      Dataset download URLs (copy to data-sources.json)
+docs/                          Architecture and output-format documentation
+AUDIT.md                       Known bugs and data issues, severity-ranked
 test_*.py                      Automated tests
 ```
 
