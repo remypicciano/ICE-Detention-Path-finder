@@ -38,6 +38,7 @@ jobs:
 
       - name: Read version from pyproject.toml
         id: version
+        shell: bash
         run: |
           version="$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
           echo "APP_VERSION=${version}" >> "$GITHUB_ENV"
