@@ -127,3 +127,28 @@ jobs:
           path: ICEDetentionPathway-v${{ env.APP_VERSION }}-Linux-*.tar.gz
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" artifacts/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "ICE Detention Pathway $TAG" \
+            --generate-notes \
+            || gh release upload "$TAG" artifacts/* \
+            --repo "$GITHUB_REPOSITORY" --clobber
