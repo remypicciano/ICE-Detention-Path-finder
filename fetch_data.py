@@ -15,6 +15,7 @@ corrected without rebuilding. See `data-sources.example.json`.
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 import ssl
@@ -136,10 +137,14 @@ def validate_parquet(path: Path, filename: str) -> int:
     except Exception as exc:  # pyarrow raises several unrelated types
         if parquet_file is not None:
             parquet_file.close()
+        # Drop every reference to the failed pyarrow object before raising:
+        # its memory-mapped file would otherwise keep the temp file locked on
+        # Windows and block the caller's unlink.
+        del parquet_file, exc
         raise DownloadError(
             f"{filename} did not download as readable Parquet. The URL may "
-            f"point at a web page rather than the file itself. ({exc})"
-        ) from exc
+            f"point at a web page rather than the file itself."
+        ) from None
 
     missing = [
         column for column in REQUIRED_COLUMNS.get(filename, ()) if column not in columns
@@ -183,18 +188,29 @@ def download_one(
                     if progress is not None:
                         progress(filename, written, total)
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        temporary.unlink(missing_ok=True)
+        unlink_later(temporary)
         raise DownloadError(f"Could not download {filename}: {exc}") from exc
 
     try:
         rows = validate_parquet(temporary, filename)
     except DownloadError:
-        temporary.unlink(missing_ok=True)
+        unlink_later(temporary)
         raise
 
     replaced = destination.is_file()
     os.replace(temporary, destination)
     return DownloadResult(filename, written, rows, replaced)
+
+
+def unlink_later(path: Path) -> None:
+    """Delete a temp file, retrying so a still-open handle can be released."""
+    for _ in range(3):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            gc.collect()
+    path.unlink(missing_ok=True)
 
 
 def download_all(
