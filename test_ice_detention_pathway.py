@@ -27,7 +27,11 @@ def build_dataset(tmp_path, arrests, stints):
 
     arrests: (identifier, apprehension timestamp SQL, location)
     stints:  (identifier, stay_ID, book-in SQL, facility, code, book-out SQL,
-              release reason, program, aor, row_original)
+              release reason, program, aor, row_original) plus optional
+              trailing fields: stint_ID, duplicate_drop_row,
+              detainee_classification, case_status, case_threat_level,
+              final_order_yes_no, final_order_date, departed_date,
+              final_charge.
     """
     arrests_file = tmp_path / "arrests.parquet"
     detention_file = tmp_path / "detention.parquet"
@@ -39,29 +43,30 @@ def build_dataset(tmp_path, arrests, stints):
         f"{sql_literal(location)}, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR))"
         for identifier, moment, location in arrests
     )
+    arrest_select = (
+        f"SELECT * FROM (VALUES {arrest_values}) AS rows("
+        "unique_identifier, apprehension_date_time, apprehension_date, "
+        "apprehension_site_landmark, apprehension_state_filled_in, "
+        "apprehension_aor)"
+        if arrests
+        else (
+            "SELECT CAST(NULL AS VARCHAR) AS unique_identifier, "
+            "CAST(NULL AS TIMESTAMPTZ) AS apprehension_date_time, "
+            "CAST(NULL AS DATE) AS apprehension_date, "
+            "CAST(NULL AS VARCHAR) AS apprehension_site_landmark, "
+            "CAST(NULL AS VARCHAR) AS apprehension_state_filled_in, "
+            "CAST(NULL AS VARCHAR) AS apprehension_aor WHERE FALSE"
+        )
+    )
     connection.execute(
         f"""
-        COPY (
-            SELECT * FROM (VALUES {arrest_values}) AS rows(
-                unique_identifier,
-                apprehension_date_time,
-                apprehension_date,
-                apprehension_site_landmark,
-                apprehension_state_filled_in,
-                apprehension_aor
-            )
-        ) TO {sql_literal(str(arrests_file))} (FORMAT PARQUET)
+        COPY ({arrest_select})
+        TO {sql_literal(str(arrests_file))} (FORMAT PARQUET)
         """
     )
 
-    stint_values = ",\n".join(
-        f"({sql_literal(identifier)}, {sql_literal(stay_id)}, {book_in}, "
-        f"{sql_literal(facility)}, {sql_literal(code)}, "
-        f"{book_out if book_out else 'CAST(NULL AS TIMESTAMPTZ)'}, "
-        f"{sql_literal(reason) if reason else 'NULL'}, "
-        f"{sql_literal(program) if program else 'NULL'}, "
-        f"{sql_literal(aor) if aor else 'NULL'}, {row_original})"
-        for (
+    def stint_sql(stint):
+        (
             identifier,
             stay_id,
             book_in,
@@ -72,8 +77,35 @@ def build_dataset(tmp_path, arrests, stints):
             program,
             aor,
             row_original,
-        ) in stints
-    )
+        ) = stint[:10]
+        stint_id = stint[10] if len(stint) > 10 else None
+        duplicate = stint[11] if len(stint) > 11 else False
+        classification = stint[12] if len(stint) > 12 else None
+        case_status = stint[13] if len(stint) > 13 else None
+        threat_level = stint[14] if len(stint) > 14 else None
+        final_order = stint[15] if len(stint) > 15 else None
+        final_order_date = stint[16] if len(stint) > 16 else None
+        departed = stint[17] if len(stint) > 17 else None
+        final_charge = stint[18] if len(stint) > 18 else None
+        return (
+            f"({sql_literal(identifier)}, {sql_literal(stay_id)}, {book_in}, "
+            f"{sql_literal(facility)}, {sql_literal(code)}, "
+            f"{book_out if book_out else 'CAST(NULL AS TIMESTAMPTZ)'}, "
+            f"{sql_literal(reason) if reason else 'NULL'}, "
+            f"{sql_literal(program) if program else 'NULL'}, "
+            f"{sql_literal(aor) if aor else 'NULL'}, {row_original}, "
+            f"{sql_literal(stint_id) if stint_id else 'NULL'}, "
+            f"{'TRUE' if duplicate else 'FALSE'}, "
+            f"{sql_literal(classification) if classification else 'NULL'}, "
+            f"{sql_literal(case_status) if case_status else 'NULL'}, "
+            f"{sql_literal(threat_level) if threat_level else 'NULL'}, "
+            f"{sql_literal(final_order) if final_order else 'NULL'}, "
+            f"{sql_literal(final_order_date) if final_order_date else 'NULL'}, "
+            f"{sql_literal(departed) if departed else 'NULL'}, "
+            f"{sql_literal(final_charge) if final_charge else 'NULL'})"
+        )
+
+    stint_values = ",\n".join(stint_sql(stint) for stint in stints)
     connection.execute(
         f"""
         COPY (
@@ -87,7 +119,16 @@ def build_dataset(tmp_path, arrests, stints):
                 detention_release_reason,
                 final_program,
                 book_in_aor,
-                row_original
+                row_original,
+                stint_ID,
+                duplicate_drop_row,
+                detainee_classification,
+                case_status,
+                case_threat_level,
+                final_order_yes_no,
+                final_order_date,
+                departed_date,
+                final_charge
             )
         ) TO {sql_literal(str(detention_file))} (FORMAT PARQUET)
         """
@@ -150,7 +191,7 @@ def test_format_timeline_keeps_each_row_as_a_segment() -> None:
     assert "Center A" in result
     assert " -> " in result
     assert "Center B" in result
-    assert "[Book-out: UNKNOWN - CURRENTLY HELD (?)], Center B" in result
+    assert "[Book-out: UNKNOWN - CURRENTLY HELD (?)][Facility: Center B]" in result
 
 
 def test_clean_location_removes_line_breaks() -> None:
@@ -200,11 +241,11 @@ def test_single_stay_orders_oldest_to_most_recent_with_locations(tmp_path) -> No
     assert stay.rows[1][1] == "Recent Center:RECENT"
 
     timeline = format_pathway(pathway)
-    assert timeline.startswith("2023-12-31 18:00:00 UTC, Arrest Place->")
+    assert timeline.startswith("2023-12-31 18:00:00 UTC, Arrest Place ->")
     assert (
         "[Book-in: 2024-01-01 08:00:00 UTC]"
-        "[Book-out: 2024-01-03 08:00:00 UTC], "
-        "Old Center:OLD"
+        "[Book-out: 2024-01-03 08:00:00 UTC]"
+        "[Facility: Old Center:OLD]"
     ) in timeline
     assert timeline.index("Old Center:OLD") < timeline.index("Recent Center:RECENT")
     assert "[STAY" not in timeline
@@ -252,11 +293,11 @@ def test_separate_stays_are_not_merged_into_one_pathway(tmp_path) -> None:
     assert "DISCREPANCY" not in timeline
     assert "[STAY 1 of 2] NO ARREST RECORD IN THIS DATASET" in timeline
     assert (
-        "(first stint — final_program: Border Patrol; "
-        "book_in_aor: Houston Area of Responsibility)"
+        "[first stint — final_program: Border Patrol; "
+        "book_in_aor: Houston Area of Responsibility]"
     ) in timeline
     assert "=== RELEASED (Paroled); NOT IN ICE CUSTODY FOR 396 days ===" in timeline
-    assert "[STAY 2 of 2] 2025-12-30 10:36:35 UTC, Federal Plaza->" in timeline
+    assert "[STAY 2 of 2] 2025-12-30 10:36:35 UTC, Federal Plaza ->" in timeline
 
     # The arrest belongs to the later stay only.
     assert pathway.stays[0].arrest is None
@@ -328,7 +369,8 @@ def test_detention_without_any_arrest_row_is_still_reported(tmp_path) -> None:
 
     assert len(pathway.stays) == 1
     assert pathway.stays[0].arrest is None
-    assert timeline.startswith("NO ARREST RECORD IN THIS DATASET (first stint — ")
+    assert timeline.startswith("NO ARREST RECORD IN THIS DATASET")
+    assert "[first stint — final_program: Border Patrol" in timeline
     assert "Old Center:OLD" in timeline
 
 
@@ -468,3 +510,300 @@ def test_format_timeline_marks_impossible_detention_dates() -> None:
     assert format_timeline(rows).startswith(
         "(DISCREPANCY: book-out is before book-in)"
     )
+
+
+def test_stale_arrest_does_not_claim_a_later_stay(tmp_path) -> None:
+    """A leftover older arrest must not be dumped on a later stay (C4)."""
+    files = build_dataset(
+        tmp_path,
+        arrests=[
+            ("person-a", "TIMESTAMPTZ '2024-02-08 09:19:00+00'", "Earlier Arrest"),
+            ("person-a", "TIMESTAMPTZ '2024-02-08 11:42:00+00'", "Same-Day Arrest"),
+        ],
+        stints=[
+            (
+                "person-a",
+                "person-a_2024-02-08",
+                "TIMESTAMPTZ '2024-02-08 14:30:00+00'",
+                "Old Center",
+                "OLD",
+                "TIMESTAMPTZ '2024-04-17 11:45:00+00'",
+                "Released",
+                None,
+                None,
+                1,
+            ),
+            (
+                "person-a",
+                "person-a_2025-06-04",
+                "TIMESTAMPTZ '2025-06-04 12:41:00+00'",
+                "Recent Center",
+                "RECENT",
+                "TIMESTAMPTZ '2025-08-08 10:00:00+00'",
+                None,
+                None,
+                None,
+                2,
+            ),
+        ],
+    )
+
+    pathway = fetch_pathway("person-a", *files)
+
+    assert pathway.stays[0].arrest.location == "Same-Day Arrest"
+    assert pathway.stays[1].arrest is None
+    assert [arrest.location for arrest in pathway.arrests_without_stay] == [
+        "Earlier Arrest"
+    ]
+
+    timeline = format_pathway(pathway)
+    assert "[ARREST WITH NO RECORDED DETENTION] 2024-02-08 09:19:00 UTC" in timeline
+    assert "NO ARREST RECORD IN THIS DATASET" in timeline
+
+
+def test_first_stay_claims_an_old_lone_arrest(tmp_path) -> None:
+    """A single arrest that precedes its only stay still pairs (C4 boundary)."""
+    files = build_dataset(
+        tmp_path,
+        arrests=[
+            ("person-b", "TIMESTAMPTZ '2024-01-01 08:00:00+00'", "Old Arrest"),
+        ],
+        stints=[
+            (
+                "person-b",
+                "person-b_2024-01-10",
+                "TIMESTAMPTZ '2024-01-10 12:00:00+00'",
+                "Old Center",
+                "OLD",
+                "TIMESTAMPTZ '2024-01-20 12:00:00+00'",
+                None,
+                None,
+                None,
+                1,
+            ),
+        ],
+    )
+
+    pathway = fetch_pathway("person-b", *files)
+
+    assert pathway.stays[0].arrest.location == "Old Arrest"
+    assert pathway.arrests_without_stay == []
+
+
+def test_same_timestamp_duplicate_arrest_does_not_claim_second_stay(
+    tmp_path,
+) -> None:
+    """Two records of one event at the same instant open only the first stay."""
+    files = build_dataset(
+        tmp_path,
+        arrests=[
+            ("person-e", "TIMESTAMPTZ '2024-02-08 11:42:00+00'", "Arrest Record A"),
+            ("person-e", "TIMESTAMPTZ '2024-02-08 11:42:00+00'", "Arrest Record B"),
+        ],
+        stints=[
+            (
+                "person-e",
+                "person-e_2024-02-08",
+                "TIMESTAMPTZ '2024-02-08 14:30:00+00'",
+                "Old Center",
+                "OLD",
+                "TIMESTAMPTZ '2024-04-17 11:45:00+00'",
+                "Released",
+                None,
+                None,
+                1,
+            ),
+            (
+                "person-e",
+                "person-e_2025-06-04",
+                "TIMESTAMPTZ '2025-06-04 12:41:00+00'",
+                "Recent Center",
+                "RECENT",
+                None,
+                None,
+                None,
+                None,
+                2,
+            ),
+        ],
+    )
+
+    pathway = fetch_pathway("person-e", *files)
+
+    assert pathway.stays[0].arrest is not None
+    assert pathway.stays[1].arrest is None
+    assert len(pathway.arrests_without_stay) == 1
+
+
+def test_stay_suffix_scopes_rendering_to_that_stay(tmp_path) -> None:
+    """A suffixed stay_ID renders only that stay, the others as context (B3)."""
+    files = build_dataset(
+        tmp_path,
+        arrests=[],
+        stints=[
+            (
+                "person-c",
+                "person-c_2024-09-16",
+                "TIMESTAMPTZ '2024-09-16 17:56:00+00'",
+                "Old Center",
+                "OLD",
+                "TIMESTAMPTZ '2024-11-29 10:44:00+00'",
+                "Paroled",
+                "Border Patrol",
+                "Houston Area of Responsibility",
+                1,
+                "person-c_2024-09-16 17:56:00_OLD",
+            ),
+            (
+                "person-c",
+                "person-c_2025-12-30",
+                "TIMESTAMPTZ '2025-12-30 11:17:00+00'",
+                "Recent Center",
+                "RECENT",
+                None,
+                None,
+                "Non-Detained Docket Control",
+                "New York City Area of Responsibility",
+                2,
+                "person-c_2025-12-30 11:17:00_RECENT",
+            ),
+        ],
+    )
+
+    pathway = fetch_pathway("person-c_2025-12-30", *files)
+
+    assert pathway.focus_stay_id == "person-c_2025-12-30"
+    timeline = format_pathway(pathway)
+    assert "[STAY 2 of 2]" in timeline
+    assert "[CONTEXT — another stay for this person:" in timeline
+    assert "[Book-in: 2025-12-30 11:17:00 UTC]" in timeline
+    assert "[Book-in: 2024-09-16 17:56:00 UTC]" not in timeline
+
+
+def test_stint_suffix_resolves_to_its_own_stay(tmp_path) -> None:
+    """A stint_ID suffix scopes to the stay that owns the stint (B3)."""
+    files = build_dataset(
+        tmp_path,
+        arrests=[],
+        stints=[
+            (
+                "person-c",
+                "person-c_2024-09-16",
+                "TIMESTAMPTZ '2024-09-16 17:56:00+00'",
+                "Old Center",
+                "OLD",
+                "TIMESTAMPTZ '2024-11-29 10:44:00+00'",
+                "Paroled",
+                "Border Patrol",
+                "Houston Area of Responsibility",
+                1,
+                "person-c_2024-09-16 17:56:00_OLD",
+            ),
+            (
+                "person-c",
+                "person-c_2025-12-30",
+                "TIMESTAMPTZ '2025-12-30 11:17:00+00'",
+                "Recent Center",
+                "RECENT",
+                None,
+                None,
+                "Non-Detained Docket Control",
+                "New York City Area of Responsibility",
+                2,
+                "person-c_2025-12-30 11:17:00_RECENT",
+            ),
+        ],
+    )
+
+    pathway = fetch_pathway("person-c_2025-12-30 11:17:00_RECENT", *files)
+
+    assert pathway.focus_stay_id == "person-c_2025-12-30"
+    timeline = format_pathway(pathway)
+    assert "[STAY 2 of 2]" in timeline
+    assert "[CONTEXT — another stay for this person:" in timeline
+
+
+def test_stay_summary_and_variance_fields(tmp_path) -> None:
+    """Stay-level fields come from the last stint; variance lists all values."""
+    files = build_dataset(
+        tmp_path,
+        arrests=[],
+        stints=[
+            (
+                "person-d",
+                "person-d_2025-10-18",
+                "TIMESTAMPTZ '2025-10-18 11:10:00+00'",
+                "Old Center",
+                "OLD",
+                "TIMESTAMPTZ '2025-10-20 12:00:00+00'",
+                "Transferred",
+                "ERO Criminal Alien Program",
+                "San Antonio Area of Responsibility",
+                1,
+                "person-d_2025-10-18 11:10:00_OLD",
+                False,
+                "Low",
+                "1-Not in Removal",
+                "1",
+                "NO",
+                None,
+                None,
+                "ALIEN PRESENT WITHOUT ADMISSION OR PAROLE",
+            ),
+            (
+                "person-d",
+                "person-d_2025-10-18",
+                "TIMESTAMPTZ '2025-10-20 13:00:00+00'",
+                "Recent Center",
+                "RECENT",
+                None,
+                None,
+                "Non-Detained Docket Control",
+                "El Paso Area of Responsibility",
+                2,
+                "person-d_2025-10-20 13:00:00_RECENT",
+                False,
+                "High",
+                "8-Excluded/Removed",
+                "2",
+                "YES",
+                "2025-11-01",
+                "2025-11-02",
+                "FRAUD OR MISUSE OF VISA",
+            ),
+        ],
+    )
+
+    pathway = fetch_pathway("person-d", *files)
+    stay = pathway.stays[0]
+
+    assert stay.stint_ids == (
+        "person-d_2025-10-18 11:10:00_OLD",
+        "person-d_2025-10-20 13:00:00_RECENT",
+    )
+    assert stay.program_variance == (
+        "ERO Criminal Alien Program; Non-Detained Docket Control"
+    )
+    assert stay.aor_variance == (
+        "San Antonio Area of Responsibility; El Paso Area of Responsibility"
+    )
+    assert stay.summary.classification == "High"
+    assert stay.summary.case_status == "8-Excluded/Removed"
+    assert stay.summary.threat_level == "2"
+    assert stay.summary.final_order == "YES"
+    assert stay.summary.final_order_date == "2025-11-01"
+    assert stay.summary.departed == "2025-11-02"
+    assert stay.summary.final_charge == "FRAUD OR MISUSE OF VISA"
+
+    timeline = format_pathway(pathway)
+    assert (
+        "[first stint — final_program: ERO Criminal Alien Program; "
+        "book_in_aor: San Antonio Area of Responsibility]"
+    ) in timeline
+    assert (
+        "[stint fields — final_program: Non-Detained Docket Control; "
+        "book_in_aor: El Paso Area of Responsibility]"
+    ) in timeline
+    assert "[last stint — classification: High" in timeline
+    assert "case_status: 8-Excluded/Removed" in timeline
+    assert "charge: FRAUD OR MISUSE OF VISA" in timeline
