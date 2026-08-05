@@ -15,7 +15,7 @@ corrected without rebuilding. See `data-sources.example.json`.
 from __future__ import annotations
 
 import argparse
-import gc
+import io
 import json
 import os
 import ssl
@@ -129,27 +129,25 @@ def load_sources(project_dir: Path) -> dict[str, str]:
 
 def validate_parquet(path: Path, filename: str) -> int:
     """Confirm a downloaded file is readable Parquet with the needed columns."""
-    parquet_file: pq.ParquetFile | None = None
     try:
-        parquet_file = pq.ParquetFile(path)
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise DownloadError(f"Could not read {filename}: {exc}") from exc
+    try:
+        # Validate from an in-memory buffer: pyarrow never opens the on-disk
+        # temp file, so on Windows no lingering handle can block its removal.
+        parquet_file = pq.ParquetFile(io.BytesIO(payload))
         columns = {field.name for field in parquet_file.schema_arrow}
         rows = parquet_file.metadata.num_rows
     except Exception as exc:  # pyarrow raises several unrelated types
-        if parquet_file is not None:
-            parquet_file.close()
-        # Drop every reference to the failed pyarrow object before raising:
-        # its memory-mapped file would otherwise keep the temp file locked on
-        # Windows and block the caller's unlink.
-        del parquet_file, exc
         raise DownloadError(
             f"{filename} did not download as readable Parquet. The URL may "
-            f"point at a web page rather than the file itself."
+            f"point at a web page rather than the file itself. ({exc})"
         ) from None
 
     missing = [
         column for column in REQUIRED_COLUMNS.get(filename, ()) if column not in columns
     ]
-    parquet_file.close()
     if missing:
         raise DownloadError(
             f"{filename} is missing expected column(s): {', '.join(missing)}. "
@@ -188,29 +186,18 @@ def download_one(
                     if progress is not None:
                         progress(filename, written, total)
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        unlink_later(temporary)
+        temporary.unlink(missing_ok=True)
         raise DownloadError(f"Could not download {filename}: {exc}") from exc
 
     try:
         rows = validate_parquet(temporary, filename)
     except DownloadError:
-        unlink_later(temporary)
+        temporary.unlink(missing_ok=True)
         raise
 
     replaced = destination.is_file()
     os.replace(temporary, destination)
     return DownloadResult(filename, written, rows, replaced)
-
-
-def unlink_later(path: Path) -> None:
-    """Delete a temp file, retrying so a still-open handle can be released."""
-    for _ in range(3):
-        try:
-            path.unlink(missing_ok=True)
-            return
-        except PermissionError:
-            gc.collect()
-    path.unlink(missing_ok=True)
 
 
 def download_all(
