@@ -7,11 +7,12 @@ import tkinter as tk
 import sys
 import uuid
 from pathlib import Path
-from tkinter import ttk
+from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 import duckdb
 
+from fetch_data import DownloadError, DownloadResult, download_all
 from ice_detention_pathway import (
     LookupError,
     fetch_pathway,
@@ -72,8 +73,14 @@ class LookupWindow:
             text=f"{APP_NAME} v{APP_VERSION}",
             font=("TkDefaultFont", 15),
         ).grid(row=0, column=0, sticky="w")
+        self.download_button = ttk.Button(
+            toolbar,
+            text="Download / Update Data…",
+            command=self.confirm_download,
+        )
+        self.download_button.grid(row=0, column=1, padx=(8, 0))
         ttk.Button(toolbar, text="? Help", command=self.show_help).grid(
-            row=0, column=1, padx=(8, 0)
+            row=0, column=2, padx=(8, 0)
         )
 
         ttk.Label(
@@ -216,6 +223,63 @@ class LookupWindow:
         self.search_button.configure(state=tk.NORMAL)
         self.copy_button.configure(state=tk.DISABLED)
 
+    def confirm_download(self) -> None:
+        confirmed = messagebox.askyesno(
+            "Download the current datasets?",
+            "This is the only feature that uses the network. It downloads the "
+            "Parquet files listed in data-sources.json and replaces the local "
+            "copies.\n\n"
+            "Each file is checked for readable Parquet and the expected "
+            "columns before anything is replaced, so a failed download leaves "
+            "your existing data untouched. The files are large; this may take "
+            "several minutes.\n\nContinue?",
+            icon=messagebox.WARNING,
+            parent=self.root,
+        )
+        if not confirmed:
+            return
+
+        self.search_button.configure(state=tk.DISABLED)
+        self.download_button.configure(state=tk.DISABLED)
+        self.copy_button.configure(state=tk.DISABLED)
+        self.status.configure(text="Starting download…")
+        threading.Thread(target=self.run_download, daemon=True).start()
+
+    def run_download(self) -> None:
+        def progress(filename: str, written: int, total: int | None) -> None:
+            if total:
+                text = (
+                    f"{filename}: {written / 1e6:,.0f} MB of {total / 1e6:,.0f} MB "
+                    f"({100.0 * written / total:.0f}%)"
+                )
+            else:
+                text = f"{filename}: {written / 1e6:,.0f} MB"
+            self.root.after(0, self.status.configure, {"text": text})
+
+        try:
+            results = download_all(PROJECT_DIR, progress=progress)
+        except (DownloadError, OSError) as exc:
+            self.root.after(0, self.show_download_error, str(exc))
+            return
+        self.root.after(0, self.show_download_result, results)
+
+    def show_download_result(self, results: list[DownloadResult]) -> None:
+        summary = "\n".join(
+            f"{result.filename}: {result.rows:,} rows, "
+            f"{result.bytes_written / 1e6:,.1f} MB"
+            for result in results
+        )
+        self.status.configure(text="Download complete.")
+        self.search_button.configure(state=tk.NORMAL)
+        self.download_button.configure(state=tk.NORMAL)
+        messagebox.showinfo("Download complete", summary, parent=self.root)
+
+    def show_download_error(self, message: str) -> None:
+        self.status.configure(text="Download failed; existing data unchanged.")
+        self.search_button.configure(state=tk.NORMAL)
+        self.download_button.configure(state=tk.NORMAL)
+        messagebox.showerror("Download failed", message, parent=self.root)
+
     def copy_result(self) -> None:
         result = self.result_box.get("1.0", "end-1c")
         if not result:
@@ -295,6 +359,10 @@ Windows .exe, or macOS .app and use these exact filenames:
 
 Use complete national files. A locally reduced copy silently removes people and
 stays, which cannot be detected from a search result.
+
+The Download / Update Data… button fetches these three plus the optional
+detention-stays-latest.parquet and joined-arrests-detention-stays-latest.parquet
+files listed in data-sources.json.
 
 DEPENDENCIES
 
