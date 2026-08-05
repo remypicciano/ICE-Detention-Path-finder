@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "Copy this file to data-sources.json. The URLs below are the current",
+    "Deportation Data Project release from their public GitHub repositories:",
+    "  ice:       arrests, detention-stints, detention-stays, joined arrests+stays",
+    "  ice-detention-facilities: the facilities lookup used for facility names",
+    "URLs must be HTTPS and must point directly at the Parquet file, not at a",
+    "web page describing it. Downloads replace the local file only after they",
+    "are confirmed to be readable Parquet with the expected columns.",
+    "detention-stays-latest.parquet is optional; the core lookup does not read it."
+  ],
+  "sources": {
+    "arrests-latest.parquet": "https://github.com/deportationdata/ice/raw/refs/heads/main/data/arrests-latest.parquet",
+    "detention-stints-latest.parquet": "https://github.com/deportationdata/ice/raw/refs/heads/main/data/detention-stints-latest.parquet",
+    "detention-stays-latest.parquet": "https://github.com/deportationdata/ice/raw/refs/heads/main/data/detention-stays-latest.parquet",
+    "joined-arrests-detention-stays-latest.parquet": "https://github.com/deportationdata/ice/raw/refs/heads/main/data/joined-arrests-detention-stays-latest.parquet",
+    "facilities-latest.parquet": "https://github.com/deportationdata/ice-detention-facilities/raw/refs/heads/main/data/facilities-latest.parquet"
+  }
+}
