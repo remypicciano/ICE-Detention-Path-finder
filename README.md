@@ -197,6 +197,7 @@ Suggested data attribution:
   and the machine-readable output spec
 - [`AUDIT.md`](AUDIT.md) — known bugs and data issues, severity-ranked
 - [`BUILDING.md`](BUILDING.md) — native macOS / Windows / Linux builds
+- [`docs/release-process.md`](docs/release-process.md) — how releases are cut
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — community guidelines
 - [`SECURITY.md`](SECURITY.md) — reporting vulnerabilities
