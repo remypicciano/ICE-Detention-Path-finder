@@ -6,6 +6,7 @@ import sys
 import threading
 import tkinter as tk
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
@@ -14,7 +15,11 @@ import duckdb
 
 from fetch_data import DownloadError, DownloadResult, download_all
 from ice_detention_pathway import (
+    ArrestEvent,
     LookupError,
+    Pathway,
+    Stay,
+    StaySummary,
     fetch_pathway,
     format_pathway,
     override_pathway_arrest_location,
@@ -222,6 +227,25 @@ class LookupWindow:
         self.search_button.configure(state=tk.NORMAL)
         self.copy_button.configure(state=tk.DISABLED)
 
+    def show_demo(self) -> None:
+        """Populate the window with a fabricated pathway for screenshots.
+
+        The identifier and the rendered result are invented; nothing is read
+        from the Parquet files and no network is used. The result still passes
+        through the real `format_pathway` renderer, so the screenshot shows the
+        exact output format the tool produces.
+        """
+        self.identifier_entry.delete(0, tk.END)
+        self.identifier_entry.insert(0, "UFAKE-0001")
+        self.set_result(format_pathway(demo_pathway()), editable=True)
+        self.status.configure(
+            text="DEMO — fabricated pathway. Paste a real identifier and select "
+            "Search to look up your data."
+        )
+        self.copy_button.configure(state=tk.NORMAL)
+        self.identifier_entry.selection_range(0, tk.END)
+        self.identifier_entry.focus_set()
+
     def confirm_download(self) -> None:
         confirmed = messagebox.askyesno(
             "Download the current datasets?",
@@ -379,6 +403,69 @@ Homebrew Python, the desktop window also requires:
             anchor="e", pady=(10, 0)
         )
 
+def demo_pathway() -> Pathway:
+    """A fabricated two-stay pathway rendered through the real formatter.
+
+    Built from the exact `Stay`/`ArrestEvent` shapes the core produces so the
+    `--demo` screenshot shows genuine output without touching the national
+    Parquet files. Every identifier, location, and timestamp is invented.
+    """
+    utc = UTC
+    stay_one = Stay(
+        stay_id="UFK-2024-0001",
+        arrest=None,
+        rows=[
+            (
+                datetime(2024, 9, 16, 17, 56, tzinfo=utc),
+                "Montgomery Processing Center:MTGPCTX",
+                datetime(2024, 11, 29, 10, 44, tzinfo=utc),
+            )
+        ],
+        entry_program="Border Patrol",
+        entry_aor="Houston Area of Responsibility",
+        release_reason="Paroled",
+        stint_ids=("UFK-2024-0001-1",),
+        all_programs=("Border Patrol",),
+        all_aors=("Houston Area of Responsibility",),
+    )
+    stay_two = Stay(
+        stay_id="UFK-2025-0002",
+        arrest=ArrestEvent(
+            datetime(2025, 12, 30, 10, 36, 35, tzinfo=utc),
+            None,
+            "NDD - 26 FEDERAL PLAZA NY, NY",
+        ),
+        rows=[
+            (
+                datetime(2025, 12, 30, 11, 17, tzinfo=utc),
+                "NYC Hold Room:NYCHOLD",
+                datetime(2025, 12, 30, 18, 25, tzinfo=utc),
+            ),
+            (
+                datetime(2025, 12, 30, 20, 26, tzinfo=utc),
+                "MDC Brooklyn:BOPBRO",
+                None,
+            ),
+        ],
+        entry_program="ERO",
+        entry_aor="New York City Area of Responsibility",
+        stint_ids=("UFK-2025-0002-1", "UFK-2025-0002-2"),
+        all_programs=("ERO",),
+        all_aors=("New York City Area of Responsibility",),
+        summary=StaySummary(
+            classification="Low",
+            case_status="ACTIVE",
+            threat_level="NA",
+            final_order="NO",
+        ),
+    )
+    return Pathway(
+        identifier="UFAKE-0001",
+        stays=[stay_one, stay_two],
+        arrests_without_stay=[],
+    )
+
+
 def bundled_self_test() -> None:
     """Verify critical bundled imports without opening a window or reading data."""
     connection = duckdb.connect(database=":memory:")
@@ -409,7 +496,9 @@ def main() -> int:
         root.destroy()
         return 0
     root = tk.Tk()
-    LookupWindow(root)
+    window = LookupWindow(root)
+    if "--demo" in sys.argv:
+        window.show_demo()
     root.mainloop()
     return 0
 
