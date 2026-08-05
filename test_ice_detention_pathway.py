@@ -807,3 +807,19 @@ def test_stay_summary_and_variance_fields(tmp_path) -> None:
     assert "[last stint — classification: High" in timeline
     assert "case_status: 8-Excluded/Removed" in timeline
     assert "charge: FRAUD OR MISUSE OF VISA" in timeline
+
+
+def test_demo_pathway_renders_fabricated_two_stay_output() -> None:
+    """The --demo pathway uses invented data and matches the README example."""
+    pytest.importorskip("tkinter")
+    from ice_detention_pathway_gui import demo_pathway
+
+    pathway = demo_pathway()
+    assert pathway.identifier == "UFAKE-0001"
+    assert len(pathway.stays) == 2
+    rendered = format_pathway(pathway)
+    assert "[STAY 1 of 2] NO ARREST RECORD IN THIS DATASET" in rendered
+    assert "=== RELEASED (Paroled); NOT IN ICE CUSTODY FOR 396 days ===" in rendered
+    assert "NYC Hold Room:NYCHOLD" in rendered
+    assert "MDC Brooklyn:BOPBRO" in rendered
+    assert "[last stint — classification: Low" in rendered

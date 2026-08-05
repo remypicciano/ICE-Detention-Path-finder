@@ -58,6 +58,17 @@ blocks, one field line per stay. Example (fabricated):
 The exact grammar is specified in
 [`docs/architecture.md#14-machine-readable-output-format`](docs/architecture.md#14-machine-readable-output-format).
 
+## Screenshot
+
+The desktop app opens with a fabricated two-stay pathway already rendered, so
+you can see the exact output format before downloading any data:
+
+```bash
+python ice_detention_pathway_gui.py --demo
+```
+
+<img src="assets/app-screenshot.png" alt="ICE Detention Pathway desktop app showing a fabricated two-stay pathway" width="720">
+
 ## Quick start
 
 ### 1. Install
