@@ -1,0 +1,42 @@
+name: Feature request
+description: Propose an improvement or new capability
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an improvement. Search existing issues first — the
+        idea may already be under discussion.
+  - type: textarea
+    id: motivation
+    attributes:
+      label: What problem does this solve?
+      description: The workflow, use case, or gap that motivates the request.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should the tool do, concretely? Sketch the interface or output if helpful.
+    validations:
+      required: true
+  - type: textarea
+    id: data_impact
+    attributes:
+      label: Data or privacy impact
+      description: |
+        Does this touch real identifiers, add network use, or change how data is
+        handled? The project keeps lookups offline and never posts real data, so
+        flag any interaction with those constraints.
+      placeholder: "None. This only changes how output is formatted."
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How would we know this feature is done and correct?
+    validations:
+      required: true
