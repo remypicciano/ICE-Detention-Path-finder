@@ -128,11 +128,14 @@ def load_sources(project_dir: Path) -> dict[str, str]:
 
 def validate_parquet(path: Path, filename: str) -> int:
     """Confirm a downloaded file is readable Parquet with the needed columns."""
+    parquet_file: pq.ParquetFile | None = None
     try:
         parquet_file = pq.ParquetFile(path)
         columns = {field.name for field in parquet_file.schema_arrow}
         rows = parquet_file.metadata.num_rows
     except Exception as exc:  # pyarrow raises several unrelated types
+        if parquet_file is not None:
+            parquet_file.close()
         raise DownloadError(
             f"{filename} did not download as readable Parquet. The URL may "
             f"point at a web page rather than the file itself. ({exc})"
@@ -141,6 +144,7 @@ def validate_parquet(path: Path, filename: str) -> int:
     missing = [
         column for column in REQUIRED_COLUMNS.get(filename, ()) if column not in columns
     ]
+    parquet_file.close()
     if missing:
         raise DownloadError(
             f"{filename} is missing expected column(s): {', '.join(missing)}. "
