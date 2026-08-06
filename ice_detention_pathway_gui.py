@@ -26,7 +26,7 @@ from ice_detention_pathway import (
 )
 
 APP_NAME = "ICE Detention Pathway"
-APP_VERSION = "3.1.0"
+APP_VERSION = "2.0.0"
 
 
 def application_directory() -> Path:
