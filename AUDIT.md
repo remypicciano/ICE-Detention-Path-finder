@@ -1,9 +1,9 @@
 # Audit: known bugs, semantic risks, and data issues
 
 Findings from a full review of the code and the local Parquet datasets.
-Recorded 2026-08-04 against ICE Detention Pathway 3.0.0; updated 2026-08-05
-against 3.1.0 and the national datasets. Items marked FIXED were resolved in
-3.1.0; see README-v2.md. Unmarked items remain open.
+Recorded 2026-08-04 against ICE Detention Pathway 2.0.0; updated 2026-08-05
+against 2.0.0 and the national datasets. Items marked FIXED were resolved in
+2.0.0; see README-v2.md. Unmarked items remain open.
 
 Counts are from the **national** datasets now in place (the original NYC-only
 arrests copy, 23,909 rows, was replaced): arrests 713,464 rows / 651,237
@@ -21,10 +21,10 @@ work it should handle · **P3** correctness risk under conditions not yet seen �
 
 ## A. Code bugs
 
-### A1 — `verify_pathway.py` hard-failed on multiple arrests · P1 · FIXED in 3.1.0
+### A1 — `verify_pathway.py` hard-failed on multiple arrests · P1 · FIXED in 2.0.0
 
 `verify_pathway.py:200` keeps the `Expected exactly one arrest row` guard that
-was removed from the core lookup in 3.0.0.
+was removed from the core lookup in 2.0.0.
 
 ```
 $ python verify_pathway.py 082832ed5c19ba0131e6e5c8824f1e54e3cae494
@@ -38,7 +38,7 @@ It fails on precisely the 465 people the fix was written to rescue.
 **Fix:** replace its private query with a call into `fetch_pathway`, so one
 code path produces both the pathway and the receipt.
 
-### A2 — Two different arrest-pairing algorithms · P1 · FIXED in 3.1.0
+### A2 — Two different arrest-pairing algorithms · P1 · FIXED in 2.0.0
 
 `ice_detention_pathway.pair_arrests_with_stays` assigns each stay the **nearest
 preceding** arrest. `verify_pathway.match_arrest_episode:288` assigns the
@@ -53,7 +53,7 @@ Fixing A1 alone would expose this.
 
 **Fix:** delete `match_arrest_episode` as part of A1.
 
-### A3 — Naive/aware datetime crash in `verify_pathway.time_window` · P3 · FIXED in 3.1.0
+### A3 — Naive/aware datetime crash in `verify_pathway.time_window` · P3 · FIXED in 2.0.0
 
 `verify_pathway.py:409` falls back to `datetime.now(tz=None)` — timezone-naive —
 while every other datetime in the module is UTC-aware. Comparing them raises
@@ -64,7 +64,7 @@ is latent, not live. National data may differ.
 
 **Fix:** `datetime.now(timezone.utc)`.
 
-### A4 — False pairings of an arrest to a stay it did not open · P1 · FIXED in 3.1.0
+### A4 — False pairings of an arrest to a stay it did not open · P1 · FIXED in 2.0.0
 
 Two pairing shortcuts let an arrest claim a stay it cannot have opened. Both
 are gone.
@@ -90,13 +90,13 @@ Net effect on national data: 456 pairings removed (521,861 → 521,405), every
 one a false pairing. Removed pairings render as `[ARREST WITH NO RECORDED
 DETENTION]` plus an unpaired stay.
 
-### A5 — `[STAY 1 of 1]` appears when an unmatched arrest exists · P4 · FIXED in 3.1.0
+### A5 — `[STAY 1 of 1]` appears when an unmatched arrest exists · P4 · FIXED in 2.0.0
 
 `ice_detention_pathway.py:481` uses the compact single-stay rendering only when
 there are no unmatched arrests. A person with one stay plus a stray arrest gets
 `[STAY 1 of 1]`, which reads oddly. Cosmetic.
 
-### A6 — Stay metadata is taken from mismatched ends · P3 · FIXED in 3.1.0
+### A6 — Stay metadata is taken from mismatched ends · P3 · FIXED in 2.0.0
 
 `group_stays` reads `entry_program`/`entry_aor` from the **first** stint and
 `release_reason` from the **last**. A stay transferred between AORs showed only
@@ -117,7 +117,7 @@ National counts: 10,869 stays carry program variance, 366,302 AOR variance.
 
 ## B. Semantic and presentation risks
 
-### B1 — `entered via` overstates what `final_program` records · P1 · FIXED in 3.1.0
+### B1 — `entered via` overstates what `final_program` records · P1 · FIXED in 2.0.0
 
 Output renders the detention row's `final_program` as
 `(entered via Border Patrol, Houston Area of Responsibility)`.
@@ -155,12 +155,12 @@ not modelled at all.
 (HSI), `b8c73d9c604a1813eeb7d3aba6badb077087ee9c` (HSI second spelling),
 `f87fcf51e73d1c6f2bacd867bfa948eee9358870` (Inspections - Land).
 
-### B3 — A `stay_ID` or `stint_ID` input is silently widened · P2 · FIXED in 3.1.0
+### B3 — A `stay_ID` or `stint_ID` input is silently widened · P2 · FIXED in 2.0.0
 
 `normalize_identifier` truncates at the first underscore, so pasting a specific
 `stay_ID` returned **every** stay for that person. Documented, but it meant a
 user asking about one stay was answered about all of them — the opposite of the
-scoping the 3.0.0 fix was about.
+scoping the 2.0.0 fix was about.
 
 A suffixed input now scopes the pathway to the named stay. The suffix is
 matched against the complete value (`base_YYYY-MM-DD HH:MM:SS` for a stay,
@@ -172,7 +172,7 @@ CLI prints `Scoped to stay:` when a suffix matched.
 
 ## C. Data-quality issues in the source datasets
 
-### C1 — Sub-day arrest/book-in inversions flood the DISCREPANCY label · P1 · FIXED in 3.1.0
+### C1 — Sub-day arrest/book-in inversions flood the DISCREPANCY label · P1 · FIXED in 2.0.0
 
 Stays whose arrest is logged **after** their own first book-in, by under 12h:
 
@@ -210,7 +210,7 @@ person appears held in two facilities simultaneously. Correctly flagged today as
 output degrades to the raw uppercase name rather than the canonical one. No
 failure, no warning.
 
-### C4 — Rows flagged `duplicate_drop_row` are labelled, not excluded · P2 · FIXED in 3.1.0
+### C4 — Rows flagged `duplicate_drop_row` are labelled, not excluded · P2 · FIXED in 2.0.0
 
 DDP flags 45,869 detention rows (national) as duplicates and excludes them from
 its own `n_stints`. This project reads every row and appends
@@ -236,7 +236,7 @@ stint. In a small number of stays the open stint is followed by a later one, so
 stint closed. Rare, and arguably the honest reading, but it means "currently
 held" can appear on a stay with a subsequent completed placement.
 
-### C7 — Local data was filtered and could not say so · P1 · FIXED in 3.1.0
+### C7 — Local data was filtered and could not say so · P1 · FIXED in 2.0.0
 
 The original local copy held 23,909 arrests, 100% `New York City Area of
 Responsibility`, 100% `arresting_agency = ICE`; anyone arrested outside NYC AOR
@@ -299,17 +299,17 @@ Data anomalies the verifier reports (source-data, not pipeline failures):
 
 ## D. Housekeeping
 
-### D1 — `verify_pathway.py` and `q.py` are not in `pyproject.toml` · P4 · FIXED in 3.1.0
+### D1 — `verify_pathway.py` and `q.py` are not in `pyproject.toml` · P4 · FIXED in 2.0.0
 
 `[tool.setuptools] py-modules` lists three modules; neither new tool is
 included, so neither ships with an install.
 
-### D2 — Terminology drift · P4 · FIXED in 3.1.0
+### D2 — Terminology drift · P4 · FIXED in 2.0.0
 
 The core calls them **stays**; `verify_pathway.py` calls them **episodes**.
 Same concept, two names, one repo.
 
-### D3 — `q.py` is an ad-hoc helper · P4 · FIXED in 3.1.0
+### D3 — `q.py` is an ad-hoc helper · P4 · FIXED in 2.0.0
 
 Written for this investigation. Either document it in the README or delete it;
 right now it is untracked and unexplained.

@@ -31,7 +31,7 @@ import pyarrow.parquet as pq
 CONFIG_FILENAME = "data-sources.json"
 EXAMPLE_CONFIG_FILENAME = "data-sources.example.json"
 DOWNLOAD_SUFFIX = ".download.tmp"
-USER_AGENT = "ICE-Detention-Pathway/3.1.0 (+https://github.com/remypicciano)"
+USER_AGENT = "ICE-Detention-Pathway/2.0.0 (+https://github.com/remypicciano)"
 CHUNK_SIZE = 1 << 20
 
 # A download is only accepted if it is readable Parquet containing the columns

@@ -1,13 +1,13 @@
-# ICE Detention Pathway — architecture, data model, and v3 behavior
+# ICE Detention Pathway — architecture, data model, and v2 behavior
 
 > Reconstruct an anonymized person's recorded route through ICE custody, one
 > stay at a time, with every value traceable to the source row it came from.
 
 This document is the in-depth technical companion to
-[`README.md`](../README.md). It explains why the v2/v3 rewrite exists, how the
+[`README.md`](../README.md). It explains why the v2 rewrite exists, how the
 data model works, the exact machine-readable output grammar, and the behaviour
-changes between releases. It was originally the v2 release notes (releases
-3.0.0 and 3.1.0).
+changes between releases. It was originally the v2 release notes (release
+2.0.0).
 
 ---
 
@@ -129,7 +129,7 @@ earlier detention can no longer trigger a false `DISCREPANCY`.
 
 ### 5. Discrepancies are flagged at day scale, not second scale
 
-**This is the largest behavioural change in 3.1.0.**
+**This is the largest behavioural change in 2.0.0.**
 
 v1 flagged any inversion, however small. In the test dataset, 9,058 stays have
 an arrest timestamped after their own first book-in. The distribution is
@@ -447,7 +447,7 @@ the raw detention-table name.
 ## Known issues
 
 `AUDIT.md` records every finding from a full review of the code and datasets,
-severity-ranked, with reproduction commands. Items fixed in 3.1.0 are marked.
+severity-ranked, with reproduction commands. Items fixed in 2.0.0 are marked.
 Open items include:
 
 - **B2** — program vocabulary is uncontrolled; output cannot be grouped by
