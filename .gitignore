@@ -13,3 +13,4 @@ pathway-*.html
 .DS_Store
 *.app/
 data-sources.json
+uv.lock
