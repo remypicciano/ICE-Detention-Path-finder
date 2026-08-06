@@ -230,7 +230,15 @@ q.py                           Ad-hoc SQL against the local Parquet files
 parquet_viewer.py              Bounded Parquet schema/row inspector
 data-sources.example.json      Dataset download URLs (copy to data-sources.json)
 docs/                          Architecture and output-format documentation
+docs/final_program.md          Observed `final_program` vocabulary and unmerged spellings
 AUDIT.md                       Known bugs and data issues, severity-ranked
+
+## The `final_program` vocabulary
+
+`final_program` is passed through verbatim; no values are merged. The field holds
+19 distinct values, including two unmerged spellings of the same unit:
+`Homeland Security Investigations` (48 rows) and `HSI Criminal Arrest Only`
+(2 rows). Group or count with that in mind. See `docs/final_program.md`.
 test_*.py                      Automated tests
 ```
 
