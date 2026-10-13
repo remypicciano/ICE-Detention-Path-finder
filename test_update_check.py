@@ -298,7 +298,10 @@ def test_format_report_when_local_build_is_ahead_of_releases() -> None:
 
 
 def test_cli_check_update_prints_the_report(monkeypatch, capsys) -> None:
-    stub_latest(monkeypatch)
+    # A tag beyond any plausible release keeps this test valid after each
+    # real version bump: the report must compare against APP_VERSION, not
+    # against a hardcoded copy of it.
+    stub_latest(monkeypatch, version="99.0.0")
 
     # The flag must never fall through to the interactive identifier prompt.
     def no_prompt(*args, **kwargs):
@@ -310,7 +313,8 @@ def test_cli_check_update_prints_the_report(monkeypatch, capsys) -> None:
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "UPDATE AVAILABLE: 2.1.0 (you have 2.0.0)" in captured.out
+    assert "UPDATE AVAILABLE: 99.0.0 (you have " in captured.out
+    assert f"{ice_detention_pathway.APP_VERSION})" in captured.out
     assert "Release page:" in captured.out
     assert captured.err == ""
 
