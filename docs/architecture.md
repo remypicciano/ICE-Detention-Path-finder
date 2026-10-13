@@ -182,6 +182,46 @@ the arrests table does not carry the CBP/ICE program, so this line is the only
 place Border Patrol or ERO Criminal Alien Program appears. The reader maps the
 field names to the DDP codebook themselves. The tool makes no causal claim.
 
+### 6a. Release independence
+
+The publisher reshapes these files between releases, so nothing in the query
+path may treat a column name as permanent. The 2026-09-30 release renamed
+`apprehension_site_landmark` to `event_landmark`, and the previous code could not
+read the new arrests file at all — `Binder Error: Referenced column
+"apprehension_site_landmark" not found in FROM clause!`.
+
+Two mechanisms prevent a recurrence:
+
+- **Column discovery.** `available_columns()` reads a file's header;
+  `optional_column()` and `first_present_column()` choose per query what to read.
+  Field *lineage* is declared as ordered tuples (`ARREST_CITY_LINEAGE`,
+  `ARREST_LANDMARK_LINEAGE`), so a rename is one line and a removal degrades to
+  the next candidate rather than failing.
+- **Composed reads.** The arrest location is built from several fields by
+  decreasing trust — normalized city, then a landmark that names a place, then
+  state, then AOR — instead of read from one column. The publisher's own
+  explanation of where a state came from is carried on
+  `ArrestEvent.state_source`.
+
+### 6b. Naming absence
+
+`Pathway.missing_fields` names the renderer-relevant fields the loaded file does
+not carry, and is surfaced in the terminal output, the desktop status bar,
+`fetch_data.py`'s post-download summary, and as `source_fields_absent` in the
+JSON export (`schema_version` 2).
+
+**Absent is not unknown.** Unknown means a row exists and a field is empty;
+absent means the publisher no longer emits the column. Telling a reader only
+that an AOR is blank invites the inference that the arrest happened outside every
+known AOR, when the truth is that the column is gone. Collapsing the two states
+would turn a fact about the pipeline into a false claim about a person.
+
+A related trap sits in the arrest city. `apprehension_city_original` is typed by
+hand and contains corrupted values (`CEDAR RA[IDS`, `C]HICAGO`) that survive into
+`apprehension_city_common_case` (`Cedar Raids`). The tool prefers the
+normalized field, but a wrong city is still wrong, and C10 checks only that
+values cannot break the output grammar — not that they are correct.
+
 ### 7. Duplicate rows are labelled, not dropped
 
 The Deportation Data Project flags some detention rows as duplicates and
@@ -411,9 +451,115 @@ def parse_pathway(lines):
     return stays
 ```
 
-The format is documented as the contract for the current release; identifiers
-are stable, rendering text is not guaranteed stable across releases (the
-`verify_bulk` digest changes whenever wording changes).
+The format is documented as the contract for the current release. Rendering text
+is not guaranteed stable across releases (the `verify_bulk` digest changes
+whenever wording changes).
+
+**Identifiers are not stable across releases, and this is a data fact rather
+than a format choice.** The publisher re-salts `unique_identifier` on every
+rebuild: between the 2025-08 and 2026-09 releases, zero of 1,014,866 old
+identifiers reappear, and a natural-key match on `(birth_year, `gender`,
+`book_in_date_time`, `detention_facility_code)` finds 3,171,995 matching stints
+of which none share an ID. A `stay_ID` from an older export will not resolve
+against newer data. Within one release the IDs are consistent across files —
+`detainers-latest.parquet` joins 325,571 of its people to
+`detention-stints-latest.parquet` — so a pathway derived from a single download
+is internally coherent and its receipt's SHA-256 prefixes pin it to those exact
+files. When an old identifier has to be resolved against a new release,
+`link_releases.py` (§16) rebuilds the mapping from the path evidence.
+
+Because a value can contain the `; ` pair separator, one labelled pair is emitted
+per segment, so repeated labels are the documented way a value appears twice:
+`[arrest — event_landmark: PRISON CAP PROGRAM; event_landmark: FEDERAL BOP
+PRISON CASES]`. `verify_bulk` C10 enforces this by checking the expressions the
+renderer actually builds, not the source columns — the raw city field holds four
+corrupt values that never reach the output.
+
+### 15. Release watermark and marked exports
+
+Every rendered block names the dataset it came from. The desktop app prepends
+it, the CLI prints it as its first line, and `emit_moves.py` opens every MOVES
+block with it:
+
+```text
+dataset-NEW data-up-to=2026-08-06
+```
+
+The tag separates the two published generations: the current one renamed
+`apprehension_site_landmark` to `event_landmark`, the earlier one still carries
+the old name. `data-up-to` is the newest record anywhere in the data, which is
+the date readers ask for first. Row counts, the newest timestamp per file, the
+per-file span and the local retrieval date go to the export manifest, where
+they are evidence rather than reading text. A block separated from its source
+still says which release produced it; a block with no watermark is never
+emitted, so absence of the line cannot be confused with an unmarked export.
+
+`emit_moves.py` renders identifiers in the delimited MOVES format:
+
+```text
+dataset-NEW data-up-to=2026-08-06
+dob -1987
+age-61
+case_title-
+district-Middle District of Georgia
+MOVES: (NO ARREST RECORD IN THIS DATASET) -> [Book-in: 2024-01-01 10:00:00 UTC][Book-out: 2024-01-05 10:00:00 UTC], Stewart Detention Center:STWRTGA
+<identifier>
+//
+```
+
+Segments are joined by ` -> `, blocks by a line containing only `//`. Manual
+corrections are marked inline with `[MANUAL_EDIT]` and named on an
+`edited-manual=` line, so a reader never has to scan for markers to learn
+whether a block is untouched source data. `dob` is the birth year, taken from
+the arrest row when there is one and from the detention rows otherwise; it is
+never filled from another field.
+
+### 16. Old identifiers: `link_releases.py`
+
+Because identifiers are re-salted (§14), an identifier saved from an older
+export stops resolving after an update. The publisher publishes no crosswalk,
+so `link_releases.py` rebuilds the mapping from evidence in the data:
+
+- the path fingerprint — the ordered chain of
+  `(facility_code, book_in, book_out)` across a person's stints — must match
+  exactly (`exact`), or the old path must be a strict prefix of the new one
+  (`extended`, meaning stints were appended after the old snapshot), or the
+  old final stint must still be open and anchored by the stints before it
+  (`closed_and_extended`);
+- `birth_year` and `gender` must also agree, since byte-identical paths are
+  common and path alone is not sufficient;
+- a candidate set with more than one member is reported as `ambiguous` with no
+  pathway emitted, and a person the new release does not hold is `not_found`.
+
+Nothing is guessed: attaching the wrong person's detention history is worse
+than reporting none, because a wrong pathway is indistinguishable from a true
+one to whoever reads it.
+
+### 17. Update check: `update_check.py`
+
+Refreshing the datasets and upgrading the application are separate things.
+`fetch_data.py` pulls new data in place; a newer *application* is only ever
+offered, never installed:
+
+- The desktop app's **Check for Updates…** button and the CLI's
+  `--check-update` flag are the only paths into this module. Nothing runs at
+  startup and nothing runs during a lookup.
+- The check reads GitHub's latest published release and compares its tag to
+  `APP_VERSION` numerically (`2.0` equals `2.0.0`; lexicographic order would
+  rank `2.9` above `2.10`).
+- The report names the release page and the asset built for this machine,
+  matched against the `ICEDetentionPathway-v<version>-<os>-<arch>` names the
+  build workflow publishes. That naming is a contract — see
+  `docs/release-process.md` — and a non-match falls back to the release page
+  rather than offering the wrong download.
+- Nothing is downloaded or replaced. The person installs the new version
+  themselves, and the Parquet files beside the application are untouched in
+  either direction.
+- A tag that is not a dotted integer, an absent release, or a rate-limited API
+  is reported as such. The checker never guesses a verdict it did not
+  compare.
+- At load time the module imports only the standard library; the certificate
+  context and user agent are imported when a check actually runs.
 
 ---
 
@@ -422,7 +568,9 @@ are stable, rendering text is not guaranteed stable across releases (the
 **It does not derive a sub-agency.** This was investigated and rejected. The
 candidate fields do not support it:
 
-- `arresting_agency` exists only on arrests and holds a single value.
+- `arresting_agency` existed only on arrests and held a single value. The
+  2026-09-30 release removed it entirely, so this can no longer be tested against
+  current data.
 - `final_program` is a program of record, with an uncontrolled vocabulary — it
   carries two unmerged spellings of the same unit (`Homeland Security
   Investigations`, 48 rows; `HSI Criminal Arrest Only`, 2 rows) — and 708
@@ -473,6 +621,22 @@ Absence of a record is not evidence of absence in reality. This applies with
 particular force to a filtered dataset, where a search result cannot reveal
 what was removed.
 
+### Reliability varies by table and by release
+
+The publisher's own guidance is that the **encounters** and **removals** tables
+have their own reliability profiles, distinct from the arrests/detention tables
+this tool reads, and that the July 2025 release is considered more reliable than
+later ones for those tables. Neither table is read here, so this tool does not
+depend on them — but a reader who joins this output to a removals or encounters
+export is combining sources with different confidence, and should not treat the
+combination as uniformly sourced.
+
+Within the tables this tool does read, reliability is bounded by what
+`verify_bulk` checks (C1–C10) and by what it cannot: the pairing rate is ~92% of
+candidate stays, a stay may be reconstructed from incomplete transfer records,
+and 60 facility codes used by the current release are absent from the facilities
+table.
+
 The source data comes from ICE through Freedom of Information Act requests,
 contains known limitations, and may be revised. Read the
 [ICE core data codebook](https://deportationdata.org/docs/ice/codebook) before
@@ -511,6 +675,10 @@ Data Project.
 ```text
 ice_detention_pathway.py       Core query, stay grouping, and CLI
 ice_detention_pathway_gui.py   Tk desktop application
+ice_history.py                 Lookup history and bulk-search helpers
+emit_moves.py                  Marked, delimited MOVES export for a list of ids
+link_releases.py               Old → new identifier crosswalk across releases
+update_check.py                Read-only release update check (Check for Updates)
 verify_pathway.py              Source-row provenance receipts
 q.py                           Ad-hoc SQL against the local Parquet files
 parquet_viewer.py              Bounded Parquet schema/row inspector

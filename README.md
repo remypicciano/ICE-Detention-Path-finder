@@ -36,7 +36,9 @@ would overstate time in custody.
 - **Bulk verification** (C1–C10) that reconciles the whole national run against
   the source data on every release
 - Runs 100% offline during lookups — the only network use is the optional
-  download button
+  download button and the **Check for Updates…** button
+- **Update check** — the app tells you when a newer release is published and
+  opens the download page; it never replaces files by itself
 
 This project uses Deportation Data Project ICE exports as source data. It is
 independent and is not affiliated with the project or with ICE.
@@ -122,10 +124,21 @@ Terminal interface:
 
 ```bash
 python ice_detention_pathway.py UNIQUE_IDENTIFIER
+python ice_detention_pathway.py UNIQUE_IDENTIFIER --export-json pathway.json
 ```
 
-Run `python ice_detention_pathway.py --help` for every option, including
-pointing the tool at data stored elsewhere.
+`--export-json PATH` also writes the pathway as structured JSON (UTC-normalized
+ISO-8601 timestamps, one entry per stint) for downstream tools. Run
+`python ice_detention_pathway.py --help` for every option, including pointing
+the tool at data stored elsewhere.
+
+`--check-update` asks GitHub for the newest published release, compares it to
+the running version, and prints where to get it — useful for scripts and for
+source checkouts:
+
+```bash
+python ice_detention_pathway.py --check-update
+```
 
 ## Desktop workflow
 
@@ -135,6 +148,61 @@ pointing the tool at data stored elsewhere.
 3. Select **Search** or press Return.
 4. Review any `DISCREPANCY`, `UNKNOWN`, or `[STAY n of total]` labels.
 5. Edit the generated text if needed, then select **Copy to Clipboard**.
+6. Select **Export JSON…** to save the pathway as structured JSON for
+   downstream tools.
+
+Every successful search is recorded automatically. The **Recent lookups**
+panel shows the last 10; double-click a row to re-open it, or **View all…**
+for the full, filterable history.
+
+**Check for Updates…** reads GitHub's latest published release and, when a
+newer version exists, offers the download page and the asset matching your
+machine. It only reads release metadata — the application itself is never
+replaced automatically, and your Parquet data files are never touched.
+
+## Bulk search
+
+**Bulk Search…** reads a JSON file of identifiers, searches each one, and
+exports the results:
+
+- **Input JSON** (any of these shapes):
+  ```json
+  ["id1", "id2"]
+  ```
+  ```json
+  {"identifiers": ["id1", "id2"]}
+  ```
+  ```json
+  [{"identifier": "id1", "label": "Case A"}, {"identifier": "id2"}]
+  ```
+- **Export JSON…** writes one bundle with each person's pathway plus a
+  found/failed summary.
+- **Export Text…** writes a readable report: every pathway with a
+  `===== identifier (label) =====` header and a final summary.
+- Failed lookups (unknown identifiers, no records) are reported per-row and do
+  not stop the batch.
+
+## Marked MOVES export
+
+`emit_moves.py` turns a list of identifiers into the delimited MOVES text used
+by saved outputs, stamped with the release it came from:
+
+```bash
+python emit_moves.py ids.txt --new-dir . -o moves.txt --manifest moves.manifest.json
+```
+
+Every block opens with a watermark naming its generation and how far its data
+runs, for example `dataset-NEW data-up-to=2026-08-06`, then the field lines,
+then the `MOVES:` line whose segments are joined by ` -> `, the identifier, and
+`//`. A block is never emitted without the watermark, because a block separated
+from its source still has to say which dataset produced it. Row counts, newest
+timestamps, per-file date spans, and the local retrieval date behind that
+watermark go to `--manifest` instead of repeating them on every block.
+
+`ids.txt` holds one identifier per line, a JSON list, or a saved output file to
+read identifiers from. `--edits edits.json` supplies manual corrections, which
+are marked inline with `[MANUAL_EDIT]` and named on an `edited-manual=` line, so
+a reader never has to scan for markers to know whether a block is source data.
 
 ## How it works
 
@@ -154,6 +222,26 @@ pointing the tool at data stored elsewhere.
 The lookup runs in an in-memory DuckDB database, which reads the Parquet files
 in place. Nothing is imported and the source files are never modified.
 
+### Fields the current release does not publish
+
+The publisher reshapes these files between releases. When a field disappears the
+tool omits it and **names the omission** rather than leaving a blank that reads
+as "unknown":
+
+```
+FIELDS THIS RELEASE DOES NOT PUBLISH
+  book_in_aor, detainee_classification
+  These are omitted from every pathway. A value is absent from the
+  source, not merely unknown, so nothing in the output stands in for it.
+```
+
+Absent is different from unknown. Unknown means the publisher recorded a row and
+left part of it empty; absent means there is no column at all. Conflating them
+would let a reader assume an arrested person's AOR was blank when in fact the
+release simply stopped publishing it. The same list appears in the terminal
+output, in the desktop status bar, in `fetch_data.py` after an update, and as
+`source_fields_absent` in the JSON export.
+
 ### Verifying a result
 
 `verify_pathway.py` prints the source spreadsheet, sheet, and row behind every
@@ -170,6 +258,51 @@ one streaming pass and checks C1–C10 invariants across the national data:
 python verify_bulk.py                  # full pass + 1500-id cross-check
 python verify_bulk.py --skip-sample    # bulk checks only, faster
 ```
+
+### Identifier scope: valid only within one release
+
+`unique_identifier` is **not a stable person key across releases.** The
+publisher re-salts it each time the tables are rebuilt. Comparing the
+2025-08 and 2026-09 releases:
+
+- every one of the 1,014,866 old `unique_identifier` values is absent from the
+  new release;
+- a natural-key match on `(birth_year, gender, book_in_date_time,
+  detention_facility_code)` finds 3,171,995 matching stints, of which **zero**
+  share a `unique_identifier`;
+- all 1,087,417 old `stay_ID` values are absent from the new release.
+
+The consequence is concrete: **an identifier copied from an older export will
+not resolve after you update the data**, and two exports of the same person
+from different dates cannot be linked automatically. Within a single release the
+IDs are consistent — `detainers-latest.parquet` joins to
+`detention-stints-latest.parquet` on 325,571 people — so a pathway built once
+from a single download is internally sound. It simply is not comparable across
+downloads. If you need longitudinal work, record the file hashes alongside your
+results (which `verify_pathway.py` already prints) and re-derive from scratch
+rather than diffing identifiers.
+
+### Finding the new identifier for an old one
+
+`link_releases.py` rebuilds that link from the data itself. A person is
+identified by their ordered chain of `(facility, book-in, book-out)` stints,
+accepted only when `birth_year` and `gender` also agree:
+
+```bash
+python link_releases.py old_ids.json --old-dir OLD_DIR --new-dir NEW_DIR \
+    --out-crosswalk crosswalk.json --out-text linked.txt
+```
+
+`old_ids.json` is a JSON array of old identifiers, or a saved text export —
+identifiers are read from its `Identifier:` lines. The crosswalk records
+`exact` (path unchanged), `extended` (stints appended since the old export),
+`ambiguous`, or `not_found` for each input.
+
+A candidate set with more than one member is reported as ambiguous and never
+guessed at, because attaching the wrong person's detention history is worse
+than reporting none: a wrong pathway is indistinguishable from a true one to
+whoever reads it. People who cannot be re-identified are listed with the
+reason — the publisher publishes no crosswalk, so the path is the only bridge.
 
 ## Data interpretation and safety
 
@@ -226,6 +359,9 @@ ice_detention_pathway_gui.py   Tk desktop application
 fetch_data.py                  Downloads and validates the national datasets
 verify_pathway.py              Source-row provenance receipt for one identifier
 verify_bulk.py                 National bulk verification (C1–C10)
+ice_history.py                 Lookup history and bulk-search helpers
+emit_moves.py                  Marked, delimited MOVES export for a list of ids
+link_releases.py               Old → new identifier crosswalk across releases
 q.py                           Ad-hoc SQL against the local Parquet files
 parquet_viewer.py              Bounded Parquet schema/row inspector
 data-sources.example.json      Dataset download URLs (copy to data-sources.json)

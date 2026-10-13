@@ -4,16 +4,20 @@ import duckdb
 import pytest
 
 from ice_detention_pathway import (
+    EXPECTED_DETENTION_FIELDS,
     ArrestEvent,
     LookupError,
     clean_location,
+    export_pathway_json,
     fetch_pathway,
     format_full_timeline,
     format_pathway,
     format_timeline,
     format_timestamp,
+    missing_source_fields,
     normalize_identifier,
     override_arrest_location,
+    pathway_to_dict,
 )
 
 
@@ -146,6 +150,358 @@ def build_dataset(tmp_path, arrests, stints):
     )
     connection.close()
     return arrests_file, detention_file, facilities_file
+
+
+def build_dataset_2026_09(tmp_path, arrests, stints, sparse=False):
+    """Write fixtures shaped like the 2026-09 data release.
+
+    That release renamed `apprehension_site_landmark` to `event_landmark`, added
+    `apprehension_city_common_case` and `apprehension_state_fill_source`, and
+    stopped publishing `book_in_aor` and `detainee_classification`. A fixture
+    pinned to the previous schema cannot detect any of that, so this one mirrors
+    the new one.
+
+    `sparse=True` additionally omits every optional detention column, which is
+    the only way to exercise the fallback branch that a dropped column depends on.
+    """
+    arrests_file = tmp_path / "arrests.parquet"
+    detention_file = tmp_path / "detention.parquet"
+    facilities_file = tmp_path / "facilities.parquet"
+    connection = duckdb.connect()
+
+    # arrest tuple: (identifier, timestamp SQL, city, state, landmark, state_source)
+    arrest_names = (
+        "unique_identifier, apprehension_date_time, _date, "
+        "apprehension_city_common_case, apprehension_state_filled_in, "
+        "event_landmark, apprehension_state_fill_source"
+    )
+    if arrests:
+        arrest_values = ",\n".join(
+            f"({sql_literal(row[0])}, {row[1]}, CAST({row[1]} AS DATE), "
+            f"{sql_literal(row[2] or '')}, {sql_literal(row[3] or '')}, "
+            f"{sql_literal(row[4] or '')}, {sql_literal(row[5] or '')})"
+            for row in arrests
+        )
+        arrest_select = f"""
+            SELECT
+                unique_identifier,
+                apprehension_date_time,
+                _date AS apprehension_date,
+                nullif(apprehension_city_common_case, '') AS apprehension_city_common_case,
+                nullif(apprehension_state_filled_in, '') AS apprehension_state_filled_in,
+                nullif(event_landmark, '') AS event_landmark,
+                nullif(apprehension_state_fill_source, '') AS apprehension_state_fill_source
+            FROM (VALUES {arrest_values}) AS rows({arrest_names})
+        """
+    else:
+        arrest_select = """
+            SELECT
+                CAST(NULL AS VARCHAR) AS unique_identifier,
+                CAST(NULL AS TIMESTAMPTZ) AS apprehension_date_time,
+                CAST(NULL AS DATE) AS apprehension_date,
+                CAST(NULL AS VARCHAR) AS apprehension_city_common_case,
+                CAST(NULL AS VARCHAR) AS apprehension_state_filled_in,
+                CAST(NULL AS VARCHAR) AS event_landmark,
+                CAST(NULL AS VARCHAR) AS apprehension_state_fill_source
+            WHERE FALSE
+        """
+    connection.execute(
+        f"COPY ({arrest_select}) TO {sql_literal(str(arrests_file))} (FORMAT PARQUET)"
+    )
+
+    # stint tuple: (identifier, stay_ID, book-in SQL, facility, code, book-out SQL)
+    if sparse:
+        stint_columns = (
+            "unique_identifier, stay_ID, book_in_date_time, detention_facility, "
+            "detention_facility_code, book_out_date_time"
+        )
+    else:
+        stint_columns = (
+            "unique_identifier, stay_ID, book_in_date_time, detention_facility, "
+            "detention_facility_code, book_out_date_time, "
+            "detention_release_reason, final_program, case_status, "
+            "case_threat_level, final_order_yes_no, final_order_date, "
+            "departed_date, final_charge"
+        )
+
+    def at(stint, index):
+        return stint[index] if len(stint) > index else None
+
+    def full_sql(stint):
+        return (
+            f"({sql_literal(at(stint, 0))}, {sql_literal(at(stint, 1))}, "
+            f"{at(stint, 2)}, {sql_literal(at(stint, 3))}, "
+            f"{sql_literal(at(stint, 4))}, "
+            f"{at(stint, 5) if at(stint, 5) else 'CAST(NULL AS TIMESTAMPTZ)'}, "
+            f"{sql_literal(at(stint, 6) or '')}, {sql_literal(at(stint, 7) or '')}, "
+            f"{sql_literal(at(stint, 8) or '')}, {sql_literal(at(stint, 9) or '')}, "
+            f"{sql_literal(at(stint, 10) or '')}, {sql_literal(at(stint, 11) or '')}, "
+            f"{sql_literal(at(stint, 12) or '')}, {sql_literal(at(stint, 13) or '')})"
+        )
+
+    def sparse_sql(stint):
+        return (
+            f"({sql_literal(stint[0])}, {sql_literal(stint[1])}, {stint[2]}, "
+            f"{sql_literal(stint[3])}, {sql_literal(stint[4])}, "
+            f"{stint[5] if stint[5] else 'CAST(NULL AS TIMESTAMPTZ)'})"
+        )
+
+    if stints:
+        values = ",\n".join(
+            (sparse_sql(s) if sparse else full_sql(s)) for s in stints
+        )
+        stint_select = f"SELECT * FROM (VALUES {values}) AS rows({stint_columns})"
+    else:
+        nulls = ", ".join(f"CAST(NULL AS VARCHAR) AS {c.strip().split()[-1]}"
+                          for c in stint_columns.split(", "))
+        stint_select = f"SELECT {nulls} WHERE FALSE"
+    connection.execute(
+        f"COPY ({stint_select}) TO {sql_literal(str(detention_file))} (FORMAT PARQUET)"
+    )
+
+    connection.execute(
+        f"""
+        COPY (
+            SELECT * FROM (VALUES
+                ('CEN_A', 'Center A'),
+                ('CEN_B', 'Center B')
+            ) AS rows(detention_facility_code, name)
+        ) TO {sql_literal(str(facilities_file))} (FORMAT PARQUET)
+        """
+    )
+    connection.close()
+    return arrests_file, detention_file, facilities_file
+
+
+def test_reads_the_2026_09_release_schema(tmp_path) -> None:
+    files = build_dataset_2026_09(
+        tmp_path,
+        arrests=[
+            (
+                "person-1",
+                "TIMESTAMPTZ '2024-01-01 08:00:00+00'",
+                "Conroe",
+                "TEXAS",
+                "NDD - 26 FEDERAL PLAZA",
+                "original",
+            )
+        ],
+        stints=[
+            (
+                "person-1",
+                "person-1_2024-01-02",
+                "TIMESTAMPTZ '2024-01-02 08:00:00+00'",
+                "Center A",
+                "CEN_A",
+                "TIMESTAMPTZ '2024-01-05 08:00:00+00'",
+                "Paroled",
+                "ERO",
+                "ACTIVE",
+                "1",
+                "YES",
+                "2023-01-01",
+                "2024-01-06",
+                "NO ENTRY",
+            )
+        ],
+    )
+    pathway = fetch_pathway("person-1", *files)
+    text = format_pathway(pathway)
+
+    assert "2024-01-01 08:00:00 UTC, Conroe, TEXAS" in text
+    assert "[arrest — event_landmark: NDD - 26 FEDERAL PLAZA" in text
+    assert "apprehension_state_fill_source: original" in text
+    assert "case_status: ACTIVE" in text
+    assert "book_in_aor" not in text
+    assert "classification" not in text
+
+
+def test_a_general_area_landmark_is_never_reported_as_the_location(tmp_path) -> None:
+    """A coverage statement must not be rendered as though it were a place."""
+    files = build_dataset_2026_09(
+        tmp_path,
+        arrests=[
+            (
+                "person-1",
+                "TIMESTAMPTZ '2024-01-01 08:00:00+00'",
+                "Dallas",
+                "TEXAS",
+                "DALLAS COUNTY GENERAL AREA",
+                "original",
+            )
+        ],
+        stints=[
+            (
+                "person-1",
+                "person-1_2024-01-02",
+                "TIMESTAMPTZ '2024-01-02 08:00:00+00'",
+                "Center A",
+                "CEN_A",
+                "TIMESTAMPTZ '2024-01-05 08:00:00+00'",
+            )
+        ],
+    )
+    text = format_pathway(fetch_pathway("person-1", *files))
+    opening = text.split(" -> ")[0]
+
+    assert opening == "2024-01-01 08:00:00 UTC, Dallas, TEXAS"
+    assert "DALLAS COUNTY GENERAL AREA" not in opening
+    assert "event_landmark: DALLAS COUNTY GENERAL AREA" in text
+
+
+def test_landmark_is_the_location_when_no_city_column_exists(tmp_path) -> None:
+    """The previous release has no city field; a real landmark must still win."""
+    files = build_dataset(
+        tmp_path,
+        arrests=[("person-1", "TIMESTAMPTZ '2024-01-01 08:00:00+00'", "26 Federal Plaza")],
+        stints=[
+            (
+                "person-1",
+                "person-1_2024-01-02",
+                "TIMESTAMPTZ '2024-01-02 08:00:00+00'",
+                "Old",
+                "OLD",
+                "TIMESTAMPTZ '2024-01-05 08:00:00+00'",
+                "Paroled",
+                "ERO",
+                "NYC AOR",
+                1,
+            )
+        ],
+    )
+    text = format_pathway(fetch_pathway("person-1", *files))
+    assert "2024-01-01 08:00:00 UTC, 26 Federal Plaza" in text
+    assert "[arrest — apprehension_site_landmark: 26 Federal Plaza]" in text
+
+
+def test_a_place_landmark_outranks_a_bare_state(tmp_path) -> None:
+    files = build_dataset_2026_09(
+        tmp_path,
+        arrests=[
+            (
+                "person-1",
+                "TIMESTAMPTZ '2024-01-01 08:00:00+00'",
+                None,
+                "NEW YORK",
+                "NDD - 26 FEDERAL PLAZA NY, NY",
+                "original",
+            )
+        ],
+        stints=[
+            (
+                "person-1",
+                "person-1_2024-01-02",
+                "TIMESTAMPTZ '2024-01-02 08:00:00+00'",
+                "Center A",
+                "CEN_A",
+                "TIMESTAMPTZ '2024-01-05 08:00:00+00'",
+            )
+        ],
+    )
+    text = format_pathway(fetch_pathway("person-1", *files))
+    assert "UTC, NDD - 26 FEDERAL PLAZA NY, NY ->" in text
+
+
+def test_lookup_survives_a_dataset_with_no_optional_columns(tmp_path) -> None:
+    """Every optional detention column missing must degrade, not crash."""
+    files = build_dataset_2026_09(
+        tmp_path,
+        arrests=[
+            (
+                "person-1",
+                "TIMESTAMPTZ '2024-01-01 08:00:00+00'",
+                "Conroe",
+                "TEXAS",
+                None,
+                None,
+            )
+        ],
+        stints=[
+            (
+                "person-1",
+                "person-1_2024-01-02",
+                "TIMESTAMPTZ '2024-01-02 08:00:00+00'",
+                "Center A",
+                "CEN_A",
+                "TIMESTAMPTZ '2024-01-05 08:00:00+00'",
+            )
+        ],
+        sparse=True,
+    )
+    pathway = fetch_pathway("person-1", *files)
+
+    assert pathway.row_count == 1
+    assert "detention_release_reason" in pathway.missing_fields
+    assert "final_program" in pathway.missing_fields
+    assert "detention_facility" not in pathway.missing_fields
+    assert format_pathway(pathway).count("Center A") == 1
+
+
+def test_absent_source_fields_are_reported_not_silently_dropped(tmp_path) -> None:
+    files = build_dataset_2026_09(
+        tmp_path,
+        arrests=[],
+        stints=[
+            (
+                "person-1",
+                "person-1_2024-01-02",
+                "TIMESTAMPTZ '2024-01-02 08:00:00+00'",
+                "Center A",
+                "CEN_A",
+                "TIMESTAMPTZ '2024-01-05 08:00:00+00'",
+            )
+        ],
+    )
+    pathway = fetch_pathway("person-1", *files)
+
+    assert "book_in_aor" in pathway.missing_fields
+    assert "detainee_classification" in pathway.missing_fields
+    assert pathway_to_dict(pathway)["source_fields_absent"] == list(
+        pathway.missing_fields
+    )
+
+
+def test_a_landmark_containing_the_pair_separator_stays_parseable(tmp_path) -> None:
+    """`;` separates pairs, so a value containing one is split, not truncated."""
+    files = build_dataset_2026_09(
+        tmp_path,
+        arrests=[
+            (
+                "person-1",
+                "TIMESTAMPTZ '2024-01-01 08:00:00+00'",
+                "Oklahoma City",
+                "OKLAHOMA",
+                "PRISON CAP PROGRAM; FEDERAL BOP PRISON CASES",
+                "original",
+            )
+        ],
+        stints=[
+            (
+                "person-1",
+                "person-1_2024-01-02",
+                "TIMESTAMPTZ '2024-01-02 08:00:00+00'",
+                "Center A",
+                "CEN_A",
+                "TIMESTAMPTZ '2024-01-05 08:00:00+00'",
+            )
+        ],
+    )
+    text = format_pathway(fetch_pathway("person-1", *files))
+    line = next(row for row in text.splitlines() if row.startswith("[arrest — "))
+
+    pairs = [p for p in line.removeprefix("[arrest — ").removesuffix("]").split("; ")]
+    assert pairs == [
+        "event_landmark: PRISON CAP PROGRAM",
+        "event_landmark: FEDERAL BOP PRISON CASES",
+        "apprehension_state_fill_source: original",
+    ]
+    assert all(": " in pair for pair in pairs)
+
+
+def test_missing_source_fields_is_empty_for_a_complete_dataset() -> None:
+    complete = set(EXPECTED_DETENTION_FIELDS)
+    assert missing_source_fields(complete) == []
+    assert "book_in_aor" in missing_source_fields(complete - {"book_in_aor"})
 
 
 def test_normalize_identifier_accepts_base_and_suffixed_values() -> None:
@@ -823,3 +1179,108 @@ def test_demo_pathway_renders_fabricated_two_stay_output() -> None:
     assert "NYC Hold Room:NYCHOLD" in rendered
     assert "MDC Brooklyn:BOPBRO" in rendered
     assert "[last stint — classification: Low" in rendered
+
+
+def test_pathway_to_dict_serializes_structure_and_utc(tmp_path) -> None:
+    """JSON export keeps every row ordered, UTC-normalized, and standalone."""
+    files = build_dataset(
+        tmp_path,
+        arrests=[
+            ("person-1", "TIMESTAMPTZ '2023-12-31 18:00:00+00'", "Arrest Place")
+        ],
+        stints=[
+            (
+                "person-1",
+                "person-1_2024-01-01",
+                "TIMESTAMPTZ '2024-01-01 08:00:00+00'",
+                "Center A",
+                "CEN_A",
+                "TIMESTAMPTZ '2024-01-03 08:00:00+00'",
+                "Paroled",
+                "ERO",
+                "New York City Area of Responsibility",
+                1,
+            ),
+            (
+                "person-1",
+                "person-1_2024-01-01",
+                "TIMESTAMPTZ '2025-02-01 09:00:00+00'",
+                "Center B",
+                "CEN_B",
+                None,
+                None,
+                None,
+                None,
+                2,
+            ),
+        ],
+    )
+    pathway = fetch_pathway("person-1", *files)
+    payload = pathway_to_dict(pathway)
+
+    assert payload["schema_version"] == 2
+    assert payload["identifier"] == "person-1"
+    assert payload["focus_stay_id"] is None
+    assert payload["totals"] == {"stays": 1, "detention_rows": 2, "arrests_without_stay": 0}
+    assert payload["exported_at"].endswith("Z")
+
+    stay = payload["stays"][0]
+    assert stay["stay_id"] == "person-1_2024-01-01"
+    assert stay["arrest"] == {
+        "date_time": "2023-12-31T18:00:00Z",
+        "date_only": "2023-12-31",
+        "location": "Arrest Place",
+        "landmark": "Arrest Place",
+        "apprehension_state_fill_source": None,
+    }
+    assert stay["entry_program"] == "ERO"
+    assert stay["program_variance"] is None
+    assert stay["start"] == "2024-01-01T08:00:00Z"
+    assert stay["end"] is None
+    assert stay["rows"] == [
+        {
+            "book_in": "2024-01-01T08:00:00Z",
+            "facility": "Center A:CEN_A",
+            "book_out": "2024-01-03T08:00:00Z",
+        },
+        {
+            "book_in": "2025-02-01T09:00:00Z",
+            "facility": "Center B:CEN_B",
+            "book_out": None,
+        },
+    ]
+    assert payload["arrests_without_stay"] == []
+
+
+def test_export_pathway_json_writes_parseable_pretty_json(tmp_path) -> None:
+    """The exported file round-trips through json.loads and ends with a newline."""
+    files = build_dataset(
+        tmp_path,
+        arrests=[
+            ("person-1", "TIMESTAMPTZ '2023-12-31 18:00:00+00'", "Arrest Place")
+        ],
+        stints=[
+            (
+                "person-1",
+                "person-1_2024-01-01",
+                "TIMESTAMPTZ '2024-01-01 08:00:00+00'",
+                "Center A",
+                "CEN_A",
+                "TIMESTAMPTZ '2024-01-03 08:00:00+00'",
+                None,
+                None,
+                None,
+                1,
+            ),
+        ],
+    )
+    pathway = fetch_pathway("person-1", *files)
+    target = tmp_path / "pathway-person-1.json"
+    export_pathway_json(pathway, target)
+
+    raw = target.read_text(encoding="utf-8")
+    assert raw.endswith("\n")
+    assert "\n  " in raw
+    import json as _json
+
+    assert _json.loads(raw) == pathway_to_dict(pathway)

@@ -16,13 +16,27 @@ The version lives in `pyproject.toml` and is mirrored in these files — update
 all of them in the same commit:
 
 - `pyproject.toml` — `project.version`
-- `ice_detention_pathway_gui.py` — `APP_VERSION`
+- `ice_detention_pathway.py` — `APP_VERSION` (the single in-code source; the
+  GUI and `fetch_data.py`'s user agent both import it)
 - `ICEDetentionPathway.spec` — `CFBundleShortVersionString` / `CFBundleVersion`
 - `version_info.txt` — `FileVersion` / `ProductVersion`
-- `fetch_data.py` — `USER_AGENT` string
 
 The desktop build workflow reads the version from `pyproject.toml`, so the
 artifact filenames track the release automatically. Do not hardcode it.
+
+The version comparison is numeric (`2.0` equals `2.0.0`), but the update
+checker (`update_check.py`) treats any non-dotted-integer tag as uncomparable
+and reports an error rather than guessing — keep tags in `v<digits.digits…>`
+form.
+
+## Artifact names are a contract
+
+The update checker identifies the right download by the asset name
+`ICEDetentionPathway-v<version>-<os>-<arch>.<ext>` produced by
+`build-desktop.yml`. Renaming those assets or changing the platform suffixes
+silently degrades the in-app check: it falls back to the release page instead
+of naming the correct download. If you change the naming, change
+`update_check.asset_for_machine` in the same commit.
 
 Commit the bump:
 
@@ -49,6 +63,38 @@ The `Build desktop applications` workflow then:
 Watch the workflow run on the
 [Actions tab](https://github.com/remypicciano/ICE-Detention-Path-finder/actions)
 and confirm the release appears with all five artifacts.
+
+## When the publisher changes the data schema
+
+The data files change independently of this project's version. A release that
+breaks them is usually not visible in CI, because the tests use fixtures.
+
+Before shipping a data-dependent change, run the national checks against the
+real files:
+
+```bash
+python fetch_data.py                 # prints fields the new release stopped publishing
+python verify_bulk.py                # C1-C10 over the whole national dataset
+python verify_pathway.py <IDENTIFIER>
+```
+
+`verify_bulk.py` is the gate. Read its `FIELDS THIS RELEASE DOES NOT PUBLISH`
+section and the data window before trusting the output, and record both in the
+release notes: a schema change that silently removes a field is a
+user-visible behaviour change even when no code changed.
+
+Things that have actually changed between releases, and how they were handled:
+
+- `apprehension_site_landmark` → `event_landmark` (2026-09). Handled by
+  `ARREST_LANDMARK_LINEAGE`; a hardcoded name broke every lookup.
+- `book_in_aor` and `detainee_classification` removed (2026-09). Reported via
+  `Pathway.missing_fields`, never silently blank.
+- `initial_bond_set_amount` changed from `double` to `string` (2026-09).
+- `unique_identifier` re-salted — **not** a stable person key across releases.
+
+If a query in `q.py` or a verifier starts failing with `Referenced column ... not
+found`, the release renamed or dropped that field. Add it to the relevant lineage
+tuple rather than special-casing the caller, and add a note to `AUDIT.md`.
 
 ## After the release
 
