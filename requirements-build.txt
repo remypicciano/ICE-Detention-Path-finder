@@ -1,5 +1,5 @@
 # Development and build dependencies; install in addition to requirements.txt.
-pyinstaller==6.21.0
+pyinstaller==6.22.3
 pytest==9.1.1
 ruff==0.16.1
 mypy==2.3.0

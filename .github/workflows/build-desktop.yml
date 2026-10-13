@@ -68,9 +68,23 @@ jobs:
       - name: Test bundled Windows application
         if: runner.os == 'Windows'
         shell: pwsh
+        # The windowed exe shows crashes as an un-clickable dialog, so a
+        # plain -Wait can block a runner for hours. Run it bounded, capture
+        # whatever it prints, and fail fast instead.
         run: |
           $process = Start-Process -FilePath "dist\ICEDetentionPathway.exe" `
-            -ArgumentList "--self-test" -Wait -PassThru
+            -ArgumentList "--self-test" -PassThru `
+            -RedirectStandardOutput "dist\selftest.out" `
+            -RedirectStandardError "dist\selftest.err"
+          if (-not $process.WaitForExit(300000)) {
+            Write-Host "::error::Bundled self-test hung for 5 minutes"
+            if (Test-Path "dist\selftest.out") { Get-Content "dist\selftest.out" }
+            if (Test-Path "dist\selftest.err") { Get-Content "dist\selftest.err" }
+            try { $process.Kill() } catch { }
+            exit 1
+          }
+          if (Test-Path "dist\selftest.out") { Get-Content "dist\selftest.out" }
+          if (Test-Path "dist\selftest.err") { Get-Content "dist\selftest.err" }
           if ($process.ExitCode -ne 0) {
             throw "Bundled self-test failed with exit code $($process.ExitCode)"
           }
