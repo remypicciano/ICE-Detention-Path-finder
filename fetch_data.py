@@ -5,8 +5,9 @@ readability and required columns, and only then replace the existing file with
 an atomic `os.replace`. An interrupted or corrupt download therefore never
 destroys data that already works.
 
-This is the only part of the project that touches the network, and it runs only
-when a person explicitly asks for it. Lookups never make network requests.
+This is the dataset half of the project's network use — the other is
+`update_check.py`, the optional release check — and both run only when a
+person explicitly asks for them. Lookups never make network requests.
 
 Source URLs live in `data-sources.json` beside the application so they can be
 corrected without rebuilding. See `data-sources.example.json`.
@@ -28,15 +29,26 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 
+from ice_detention_pathway import APP_VERSION, missing_source_fields
+
 CONFIG_FILENAME = "data-sources.json"
 EXAMPLE_CONFIG_FILENAME = "data-sources.example.json"
 DOWNLOAD_SUFFIX = ".download.tmp"
-USER_AGENT = "ICE-Detention-Pathway/2.0.0 (+https://github.com/remypicciano)"
+USER_AGENT = (
+    f"ICE-Detention-Pathway/{APP_VERSION} (+https://github.com/remypicciano)"
+)
 CHUNK_SIZE = 1 << 20
 
 # A download is only accepted if it is readable Parquet containing the columns
 # the lookup depends on. This catches an HTML error page saved under a .parquet
 # name, a truncated transfer, and a URL that points at the wrong dataset.
+#
+# These are the columns the lookup cannot work without, which is deliberately a
+# short list. The publisher reshapes its files between releases — the 2026-09
+# arrivals file renamed `apprehension_site_landmark` to `event_landmark` and
+# added normalized city columns — so the fields the renderer merely *reads* are
+# discovered at query time rather than demanded at download time. Those are
+# reported by `report_absent_fields` instead of treated as a broken download.
 REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
     "arrests-latest.parquet": ("unique_identifier", "apprehension_date_time"),
     "detention-stints-latest.parquet": (
@@ -53,6 +65,21 @@ REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+# Which optional renderer fields belong to which dataset, so an update can say
+# what it stopped publishing.
+ABSENT_FIELD_DATASETS = {
+    "arrests-latest.parquet": (
+        "apprehension_site_landmark",
+        "apprehension_city_original",
+        "apprehension_city_common_case",
+        "apprehension_state_filled_in",
+        "apprehension_state_fill_source",
+        "arresting_agency",
+        "operation",
+    ),
+    "detention-stints-latest.parquet": None,
+}
+
 
 class DownloadError(Exception):
     """Raised when a dataset cannot be downloaded or fails validation."""
@@ -64,6 +91,7 @@ class DownloadResult:
     bytes_written: int
     rows: int
     replaced_existing: bool
+    absent_fields: tuple[str, ...] = ()
 
 
 ProgressCallback = Callable[[str, int, int | None], None]
@@ -127,8 +155,8 @@ def load_sources(project_dir: Path) -> dict[str, str]:
     return cleaned
 
 
-def validate_parquet(path: Path, filename: str) -> int:
-    """Confirm a downloaded file is readable Parquet with the needed columns."""
+def parquet_columns(path: Path, filename: str) -> set[str]:
+    """Return the column names of a Parquet file."""
     try:
         payload = path.read_bytes()
     except OSError as exc:
@@ -137,8 +165,27 @@ def validate_parquet(path: Path, filename: str) -> int:
         # Validate from an in-memory buffer: pyarrow never opens the on-disk
         # temp file, so on Windows no lingering handle can block its removal.
         parquet_file = pq.ParquetFile(io.BytesIO(payload))
-        columns = {field.name for field in parquet_file.schema_arrow}
-        rows = parquet_file.metadata.num_rows
+        return {field.name for field in parquet_file.schema_arrow}
+    except Exception as exc:  # pyarrow raises several unrelated types
+        raise DownloadError(
+            f"{filename} did not download as readable Parquet. The URL may "
+            f"point at a web page rather than the file itself. ({exc})"
+        ) from None
+
+
+def validate_parquet(path: Path, filename: str) -> tuple[int, set[str]]:
+    """Confirm a file is readable Parquet with the needed columns.
+
+    Returns the row count and the full column set, so the caller can also report
+    which optional fields this release no longer publishes.
+    """
+    columns = parquet_columns(path, filename)
+    try:
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise DownloadError(f"Could not read {filename}: {exc}") from exc
+    try:
+        rows = pq.ParquetFile(io.BytesIO(payload)).metadata.num_rows
     except Exception as exc:  # pyarrow raises several unrelated types
         raise DownloadError(
             f"{filename} did not download as readable Parquet. The URL may "
@@ -155,7 +202,7 @@ def validate_parquet(path: Path, filename: str) -> int:
         )
     if rows == 0:
         raise DownloadError(f"{filename} downloaded with zero rows.")
-    return int(rows)
+    return int(rows), columns
 
 
 def download_one(
@@ -190,14 +237,30 @@ def download_one(
         raise DownloadError(f"Could not download {filename}: {exc}") from exc
 
     try:
-        rows = validate_parquet(temporary, filename)
+        rows, columns = validate_parquet(temporary, filename)
     except DownloadError:
         temporary.unlink(missing_ok=True)
         raise
 
+    absent = report_absent_fields(filename, columns)
     replaced = destination.is_file()
     os.replace(temporary, destination)
-    return DownloadResult(filename, written, rows, replaced)
+    return DownloadResult(filename, written, rows, replaced, absent)
+
+
+def report_absent_fields(filename: str, columns: set[str]) -> tuple[str, ...]:
+    """Name the renderer fields this release does not publish.
+
+    A field the publisher has dropped is absent, not unknown. Reporting it at
+    download time means the loss is visible at the moment of the update rather
+    than discovered later as a silent gap in a person's pathway.
+    """
+    if filename == "detention-stints-latest.parquet":
+        return tuple(missing_source_fields(columns))
+    watched = ABSENT_FIELD_DATASETS.get(filename)
+    if watched is None:
+        return ()
+    return tuple(field for field in watched if field not in columns)
 
 
 def download_all(
@@ -269,6 +332,17 @@ def main() -> int:
             f"{result.filename}: {action}, {result.rows:,} rows, "
             f"{result.bytes_written / 1e6:,.1f} MB"
         )
+        if result.absent_fields:
+            print(
+                f"  no longer publishes: {', '.join(result.absent_fields)}"
+            )
+            print(
+                "  These will be omitted from every pathway. The publisher no"
+                " longer"
+            )
+            print(
+                "  supplies them, so nothing in the output stands in for them."
+            )
     return 0
 
 

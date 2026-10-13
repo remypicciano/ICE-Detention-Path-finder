@@ -59,6 +59,7 @@ from typing import Any
 import duckdb
 
 from ice_detention_pathway import (
+    ARREST_LANDMARK_LINEAGE,
     ARREST_TO_BOOK_IN_TOLERANCE,
     DEFAULT_ARRESTS_FILE,
     DEFAULT_DETENTION_FILE,
@@ -68,14 +69,17 @@ from ice_detention_pathway import (
     Pathway,
     Stay,
     arrest_location_expr,
+    arrest_provenance_expr,
     available_columns,
     detention_order_by,
     detention_select,
     detention_sources,
     fetch_pathway,
+    first_present_column,
     focus_stay_id,
     format_pathway,
     group_stays,
+    missing_source_fields,
     pair_arrests_with_stays,
     utc_datetime,
 )
@@ -117,13 +121,25 @@ def open_connection() -> duckdb.DuckDBPyConnection:
 def load_arrests(
     connection: duckdb.DuckDBPyConnection, arrests_file: Path
 ) -> dict[str, list[ArrestEvent]]:
-    """All arrest rows keyed by identifier, ordered as the core orders them."""
+    """All arrest rows keyed by identifier, ordered as the core orders them.
+
+    The arrests file has been renamed and reshaped between releases, so the
+    columns it is read from are discovered rather than assumed. Reading it the
+    same way the core does is what lets C7 compare the two paths meaningfully.
+    """
+    present = available_columns(connection, arrests_file)
+    landmark_expr, _state_expr, state_source_expr = arrest_provenance_expr(present)
+    landmark_field = (
+        first_present_column(ARREST_LANDMARK_LINEAGE, present) or "event_landmark"
+    )
     rows = connection.execute(
         f"""
         SELECT unique_identifier,
                apprehension_date_time,
                apprehension_date,
-               {arrest_location_expr()}
+               {arrest_location_expr(present)},
+               {landmark_expr},
+               {state_source_expr}
         FROM read_parquet(?)
         WHERE unique_identifier IS NOT NULL
         ORDER BY unique_identifier,
@@ -133,9 +149,16 @@ def load_arrests(
         [str(arrests_file)],
     ).fetchall()
     grouped: dict[str, list[ArrestEvent]] = {}
-    for identifier, moment, date_only, location in rows:
+    for identifier, moment, date_only, location, landmark, state_source in rows:
         grouped.setdefault(identifier, []).append(
-            ArrestEvent(moment, date_only, location)
+            ArrestEvent(
+                moment,
+                date_only,
+                location,
+                landmark,
+                state_source,
+                landmark_field,
+            )
         )
     return grouped
 
@@ -498,23 +521,35 @@ def delimiter_contract(
     current data cannot produce a value that would be mis-split; a DDP data
     refresh that introduces such a value fails verification instead of silently
     breaking the format.
+
+    Each scan is restricted to the columns the dataset actually has. A field a
+    release stopped publishing cannot break the format, and referencing it would
+    fail the whole check for a file that is otherwise sound.
     """
+    present = {
+        "detention": available_columns(connection, detention_file),
+        "facilities": available_columns(connection, facilities_file),
+        "arrests": available_columns(connection, arrests_file),
+    }
     scans = [
         (
             "facility names/codes",
             detention_file,
+            "detention",
             ["detention_facility", "detention_facility_code"],
             "[\\[\\]\\:]",
         ),
         (
             "canonical facility names",
             facilities_file,
+            "facilities",
             ["name"],
             "[\\[\\]\\:]",
         ),
         (
             "rendered stint summary fields",
             detention_file,
+            "detention",
             [
                 "final_program",
                 "book_in_aor",
@@ -531,18 +566,22 @@ def delimiter_contract(
         (
             "release reasons",
             detention_file,
+            "detention",
             ["detention_release_reason"],
             "\\;|\\r|\\n",
         ),
     ]
     total_bad = 0
-    for label, file, columns, pattern in scans:
+    for label, file, key, columns, pattern in scans:
+        selected = [column for column in columns if column in present[key]]
+        if not selected:
+            continue
         where = " OR ".join(
-            f"regexp_matches(cast({column} AS VARCHAR), ?)" for column in columns
+            f"regexp_matches(cast({column} AS VARCHAR), ?)" for column in selected
         )
         bad = connection.execute(
             f"SELECT count(*) FROM read_parquet(?) WHERE {where}",
-            [str(file)] + [pattern] * len(columns),
+            [str(file)] + [pattern] * len(selected),
         ).fetchone()
         bad_count = bad[0] if bad else 0
         total_bad += bad_count
@@ -551,25 +590,41 @@ def delimiter_contract(
                 "C10 delimiter contract", False, f"{label}: {bad_count} row(s) match"
             )
 
-    where = " OR ".join(
-        f"regexp_matches(cast({column} AS VARCHAR), ?)"
-        for column in [
-            "apprehension_site_landmark",
-            "apprehension_state_filled_in",
-            "apprehension_aor",
-            "operation",
-        ]
+    # Arrest fields reach the output in two places: the timeline's location slot
+    # (split on ` -> `, bounded by brackets) and the `[arrest — ...]` field line
+    # (split on `; `). Arrows, brackets, and newlines would corrupt both. A
+    # semicolon is handled by the renderer, which emits one labelled pair per
+    # segment, so it is not a violation here.
+    #
+    # The scan runs on the expressions the renderer actually builds, not on every
+    # column in each field's lineage. The lineage lists a preferred column and a
+    # fallback, and the fallback is read only when the preferred column is null.
+    # Scanning both would report corruption in a column that never reaches the
+    # output: this release has four corrupt values in
+    # `apprehension_city_original`, all of which have a corrected
+    # `apprehension_city_common_case` and so are never rendered.
+    landmark_expr, _state_expr, state_source_expr = arrest_provenance_expr(
+        present["arrests"]
     )
-    bad = connection.execute(
-        f"SELECT count(*) FROM read_parquet(?) WHERE {where}",
-        [str(arrests_file)] + ["[\\[\\]]|->"] * 4,
-    ).fetchone()
-    bad_count = bad[0] if bad else 0
-    if bad_count:
-        findings.check(
-            "C10 delimiter contract", False,
-            f"arrest location fields: {bad_count} row(s) match",
-        )
+    arrest_expressions = [
+        ("arrest location", arrest_location_expr(present["arrests"], "")),
+        ("arrest landmark", landmark_expr),
+        ("arrest state fill source", state_source_expr),
+    ]
+    for label, expression in arrest_expressions:
+        bad = connection.execute(
+            f"""
+            SELECT count(*) FROM read_parquet(?)
+            WHERE regexp_matches(trim({expression}), '[\\[\\]]|->|\\r|\\n')
+            """,
+            [str(arrests_file)],
+        ).fetchone()
+        bad_count = bad[0] if bad else 0
+        if bad_count:
+            findings.check(
+                "C10 delimiter contract", False,
+                f"{label}: {bad_count} row(s) match",
+            )
 
     if total_bad == 0:
         findings.note(
@@ -584,20 +639,31 @@ def data_scope(
     detention_file: Path,
 ) -> None:
     """Report the local data window and the arrests scope (C9)."""
-    scope = connection.execute(
-        """
-        SELECT apprehension_aor, arresting_agency, count(*)
-        FROM read_parquet(?)
-        GROUP BY 1, 2
-        ORDER BY 3 DESC
-        """,
-        [str(arrests_file)],
-    ).fetchall()
-    print("LOCAL ARRESTS SCOPE (what is NOT in this copy)")
-    for aor, agency, rows in scope:
-        print(f"  {rows:>8,}  {agency or 'unknown'}  |  {aor or 'unknown AOR'}")
-    print("  Any arrest outside these categories cannot appear, whether or not")
-    print("  it happened. Absence here is not evidence of absence in reality.")
+    present = available_columns(connection, arrests_file)
+    scope_columns = [
+        column
+        for column in ("apprehension_aor", "arresting_agency")
+        if column in present
+    ]
+    if scope_columns:
+        group_by = ", ".join(str(index) for index in range(1, len(scope_columns) + 1))
+        scope = connection.execute(
+            f"""
+            SELECT {", ".join(scope_columns)}, count(*) AS arrest_rows
+            FROM read_parquet(?)
+            GROUP BY {group_by}
+            ORDER BY arrest_rows DESC
+            """,
+            [str(arrests_file)],
+        ).fetchall()
+        print("LOCAL ARRESTS SCOPE (what is NOT in this copy)")
+        for row in scope:
+            parts = [str(value) if value else "unknown" for value in row[:-1]]
+            print(f"  {row[-1]:>8,}  " + "  |  ".join(parts))
+        print("  Any arrest outside these categories cannot appear, whether or not")
+        print("  it happened. Absence here is not evidence of absence in reality.")
+    else:
+        print("LOCAL ARRESTS SCOPE: this release publishes no arrest scope fields.")
 
     window = connection.execute(
         """
@@ -620,6 +686,15 @@ def data_scope(
         f"  stints with no stay_ID (all also lack a unique_identifier and are "
         f"unreachable): {null_stay:,}"
     )
+
+    absent = missing_source_fields(available_columns(connection, detention_file))
+    print("\nFIELDS THIS RELEASE DOES NOT PUBLISH")
+    if absent:
+        print("  " + ", ".join(absent))
+        print("  These are omitted from every pathway. A value is absent from the")
+        print("  source, not merely unknown, so nothing in the output stands in for it.")
+    else:
+        print("  none — every field the renderer reads is present")
 
 
 def report(findings: Findings, counts: Counter[str], digest: str, elapsed: float) -> int:

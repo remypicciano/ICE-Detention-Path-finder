@@ -40,6 +40,7 @@ Data = "https://deportationdata.org/data/processed/ice.html"
 py-modules = [
   "ice_detention_pathway",
   "ice_detention_pathway_gui",
+  "update_check",
   "verify_pathway",
   "parquet_viewer",
 ]
@@ -60,7 +61,7 @@ ignore = ["E501"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["ice_detention_pathway.py", "fetch_data.py", "verify_bulk.py", "q.py"]
+files = ["ice_detention_pathway.py", "ice_history.py", "fetch_data.py", "update_check.py", "verify_bulk.py", "q.py"]
 [[tool.mypy.overrides]]
 module = ["pyarrow.*", "certifi", "duckdb"]
 ignore_missing_imports = true

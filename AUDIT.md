@@ -2,20 +2,148 @@
 
 Findings from a full review of the code and the local Parquet datasets.
 Recorded 2026-08-04 against ICE Detention Pathway 2.0.0; updated 2026-08-05
-against 2.0.0 and the national datasets. Items marked FIXED were resolved in
-2.0.0; see README-v2.md. Unmarked items remain open.
+against 2.0.0 and the national datasets; updated 2026-09-30 against the
+2026-09-30 data release. Items marked FIXED were resolved in 2.0.0; see
+README-v2.md. Unmarked items remain open.
 
 Counts are from the **national** datasets now in place (the original NYC-only
-arrests copy, 23,909 rows, was replaced): arrests 713,464 rows / 651,237
-people · detention stints 2,617,844 rows / 1,014,866 people · detention stays
-1,087,417 rows · facilities 844 rows. Data window: book-in 2004-12-05 →
-2026-03-11, book-out 2022-10-01 → 2026-03-11. Items whose counts were measured
-on the filtered copy are marked **filtered-era**. Every count is reproducible
-with `q.py` or `verify_bulk.py`.
+arrests copy, 23,909 rows, was replaced): arrests 896,393 rows / 812,823
+people · detention stints 3,202,317 rows / 1,174,420 people · detention stays
+1,264,756 rows · facilities 877 rows. Data window: book-in 2021-10-01 →
+2026-08-06, book-out 2022-10-01 → 2026-08-06. Items marked **(2025-08 era)**
+were measured on the previous release: arrests 713,464 rows / 651,237 people ·
+detention stints 2,617,844 rows / 1,014,866 people · detention stays 1,087,417
+rows · facilities 844 rows, book-in 2004-12-05 → 2026-03-11. Items measured on
+the filtered copy are marked **filtered-era**. Every count is reproducible with
+`q.py` or `verify_bulk.py`.
 
 Severity: **P1** wrong output a reader would trust · **P2** refuses or degrades
 work it should handle · **P3** correctness risk under conditions not yet seen ·
 **P4** housekeeping.
+
+---
+
+## A0. The 2026-09-30 release (new findings)
+
+### A0.1 — Hard crash on the new arrests file · P1 · FIXED
+
+The 2026-09-30 release renamed `apprehension_site_landmark` to `event_landmark`.
+Every lookup against the new file died before returning a row:
+
+```
+Binder Error: Referenced column "apprehension_site_landmark" not found in FROM clause!
+```
+
+The same release dropped `arresting_agency`, `operation`, `toa_current_duty_site`,
+`apprehension_type`, `book_in_aor`, `detainee_classification`, `race`, and
+`birth_country` from the detention tables, and changed `initial_bond_set_amount`
+from `double` to `string`.
+
+**Fix:** schema discovery rather than hardcoded column names. Both the core and
+the two verifiers now probe the file's columns and read each field through a
+declared lineage (`ARREST_CITY_LINEAGE`, `ARREST_LANDMARK_LINEAGE`), so a
+release that reshapes its tables no longer requires a code change.
+
+### A0.2 — `unique_identifier` is not stable across releases · P1 · DOCUMENTED
+
+The publisher re-salts identifiers on every rebuild. Between the 2025-08 and
+2026-09 releases:
+
+| Measure | Result |
+|---|---|
+| Old `unique_identifier` values found in the new release | **0 of 1,014,866** |
+| Old `stay_ID` values found in the new release | **0 of 1,087,417** |
+| Natural-key matches (`birth_year`, `gender`, `book_in_date_time`, `detention_facility_code`) | 3,171,995 |
+| …of those, sharing the same `unique_identifier` | **0** |
+
+The same people are present under different identifiers. **Consequence: an
+identifier saved from an earlier export will not resolve after a data update,
+and two exports cannot be diffed or linked by ID.** Within one release the IDs
+are consistent — `detainers-latest.parquet` joins 325,571 of its people to
+`detention-stints-latest.parquet` — so a single lookup is internally sound.
+
+This contradicts any earlier reading of these IDs as durable person keys. There
+is no publisher-provided crosswalk; a natural key is the only bridge, and it is
+ambiguous where two people share a birth year, gender, and book-in minute.
+
+### A0.3 — Placeholder landmarks reported as arrest locations · P1 · FIXED
+
+`event_landmark` is a coverage statement, not an address. 292,790 rows
+(32.66%) are placeholders such as `DALLAS COUNTY GENERAL AREA`,
+`MTG GENERAL AREA, NON-SPECIFIC`. The old code took the landmark as the
+location whenever it was non-empty, so a person's pathway opened with a
+non-place. Landmark coverage also fell from 97.86% to 77.57% in this release.
+
+**Fix:** placeholder patterns are excluded from the location expression, and
+the raw value is quoted under its own field name on a `[arrest — ...]` line
+instead. The location now prefers the publisher's normalized
+`apprehension_city_common_case`, falls back to a real landmark, then state, then
+AOR.
+
+### A0.4 — New city field is manually entered and inconsistent · P1 · MITIGATED
+
+`apprehension_city_original` is typed by hand: 18,512 distinct raw values
+collapse to 11,262 after the publisher's own `apprehension_city_common_case`
+normalization, which rewrites 197,588 of 785,235 populated values (25.16%).
+Residual defects survive normalization — `CEDAR RA[IDS` becomes `Cedar Raids`.
+
+**Mitigation:** the common-case field is used and the raw field is only a
+fallback. It is not a solution: the normalized value is still sometimes wrong,
+and a wrong city is worse than none. Geographic misattribution (county/town/
+borough/parish for a city field) is small at 158 heuristic matches.
+
+### A0.5 — `;` in three landmark values collides with the output grammar · P2 · FIXED
+
+Field pairs on the `[arrest — ...]` line are separated by `; `. Three landmark
+values contain `;` themselves (5 rows):
+
+- `PRISON CAP PROGRAM; FEDERAL BOP PRISON CASES` (3)
+- `PRISON CAP PROGRAM; OKLA DOC PRISON CASES` (1)
+- `I-15, I-215 CORRIDOR; F/HWY 76, TO C. KEITH RD` (1)
+
+Unsplit, a parser reads the second half as a new field. **Fix:** a value
+containing `;` is emitted as one labelled pair per segment, reusing the
+repeated-label convention the grammar already defines. `verify_bulk.py` C10 now
+checks the rendered expressions rather than the source columns.
+
+### A0.8 — National bulk verification on the 2026-09-30 release · PASS
+
+`verify_bulk.py` over all 1,174,420 people / 1,264,756 stays / 3,191,399 stints
+(790s), and again on the 2025-08 files to confirm no regression:
+
+| | 2026-09-30 | 2025-08 (200k sample) |
+|---|---|---|
+| Paired stays | 673,477 | 40,214 |
+| Unpaired stays | 591,279 | 42,965 |
+| Unmatched arrests | 68,652 | 4,201 |
+| C8 `n_stints` disagreements | 0 | 0 |
+| C10 delimiter contract | pass | pass |
+| Absent renderer fields | `book_in_aor`, `detainee_classification` | none |
+
+C8 boundary reconciliation reports 33,038 stays whose published book-in
+precedes the first stint row and 29,604 whose published book-out follows the
+last. These come from the published table's wider nominal window, not pipeline
+failures, and 0 stays disagree in the other direction. Open stays: 65,738,
+stable in rate against 2025-08.
+
+### A0.6 — Facility codes missing from the facilities table · P2 · OPEN
+
+60 facility codes used by the new stints (3,825 stints) are absent from the
+877-row facilities table, so those stints cannot be given a canonical name. The
+2025-08 release had 4 such codes. The path still renders using the facility code
+alone.
+
+### A0.7 — `detainers-latest.parquet` can inflate a pathway if joined naively · P1 · NOT WIRED IN
+
+The detainer file joins per-person within a release, and it still carries fields
+the stints file just dropped (`case_status`, `conviction`, `detainer_type`,
+`birth_country`, `msc_*`). 429,140 detainer rows belong to 325,570 people who
+have stints, and **107,962 people have more than one detainer row** (up to
+88,836), with 31,679 duplicated `(person, episode)` groups. A row-level join
+would multiply stints and corrupt every stay boundary.
+
+Not wired in. It is the most promising route to restoring the dropped case
+fields, but only with episode-level deduplication.
 
 ---
 
@@ -203,16 +331,21 @@ Live examples: `e7ee5fb10b7ffec18207ce693bc775be9b9d49b4` (92 min),
 person appears held in two facilities simultaneously. Correctly flagged today as
 `detention begins before previous book-out`. Recorded so the count is known.
 
-### C3 — 4 facility codes missing from the facilities table · P2
+### C3 — Facility codes missing from the facilities table · P2 · WORSENED
 
-`NYMARCC`, `NYMDSTC`, `NYGROVC`, `NYFISHC` appear in detention stints but not in
-`facilities-latest.parquet`. The join falls back to `detention_facility`, so
-output degrades to the raw uppercase name rather than the canonical one. No
-failure, no warning.
+**2025-08 era:** 4 codes (`NYMARCC`, `NYMDSTC`, `NYGROVC`, `NYFISHC`) appeared
+in stints but not in `facilities-latest.parquet` (844 rows).
+
+**2026-09:** 60 codes used by the new stints are absent from the 877-row
+facilities table, affecting 3,825 stints. The join falls back to
+`detention_facility`, so output degrades to the raw uppercase name rather than
+the canonical one. No failure, no warning. The gap grew roughly 15× in stints
+affected, which is worth raising with the publisher.
 
 ### C4 — Rows flagged `duplicate_drop_row` are labelled, not excluded · P2 · FIXED in 2.0.0
 
-DDP flags 45,869 detention rows (national) as duplicates and excludes them from
+DDP flags 45,869 detention rows (2025-08 era; 46,430 in 2026-09, national) as
+duplicates and excludes them from
 its own `n_stints`. This project reads every row and appends
 `[FLAGGED DUPLICATE ROW]` to the facility name, so stint counts here can be
 reconciled against DDP's published figures instead of silently diverging. The
@@ -230,8 +363,11 @@ recorded because the silence is undetectable by a reader.
 
 ### C6 — Open stints and stays · P3
 
-61,888 stints (national) have no book-out; 61,594 stays have at least one open
-stint. In a small number of stays the open stint is followed by a later one, so
+61,888 stints (2025-08 era) have no book-out; 61,594 stays have at least one open
+stint. **2026-09: 65,894 stints open, 65,741 stays affected** — the rate is
+essentially unchanged despite 22% more stints, so this is a stable property of
+the source rather than a growing gap. In a small number of stays the open stint
+is followed by a later one, so
 `Stay.end` returns `None` and the stay reads as ongoing even though a later
 stint closed. Rare, and arguably the honest reading, but it means "currently
 held" can appear on a stay with a subsequent completed placement.
@@ -318,10 +454,45 @@ right now it is untracked and unexplained.
 
 ## Reproducing the counts
 
+`verify_bulk.py` is the authority for anything marked reproducible below. It runs
+the real grouping and pairing code over the whole national dataset and prints the
+C1–C10 results plus the data window and the absent-field list:
+
+```bash
+python verify_bulk.py                       # full pass + 1500-id cross-check
+python verify_bulk.py --skip-sample         # bulk checks only, faster
+python verify_bulk.py --limit 300000        # dev smoke run
+```
+
+Cross-release comparisons (A0.2) need both releases' files side by side, since the
+identifiers do not carry across:
+
+```bash
+# identifier instability
+python - <<'PY'
+import duckdb
+c = duckdb.connect()
+OLD, NEW = "old/", "new/"   # paths to the two arrests/detention copies
+print(c.execute(f"""
+  SELECT count(*) FROM (
+    SELECT unique_identifier FROM read_parquet('{OLD}detention-stints-latest.parquet')
+    INTERSECT
+    SELECT unique_identifier FROM read_parquet('{NEW}detention-stints-latest.parquet'))
+""").fetchone())
+PY
+```
+
+`q.py` remains available for ad-hoc counts:
+
 ```bash
 python q.py "SELECT final_program, count(*) FROM 'detention-stints-latest.parquet' GROUP BY 1 ORDER BY 2 DESC"
 python q.py "SELECT count(*) FROM 'detention-stints-latest.parquet' WHERE duplicate_drop_row"
-python q.py "SELECT apprehension_aor, arresting_agency, count(*) FROM 'arrests-latest.parquet' GROUP BY 1,2"
+python q.py "SELECT apprehension_aor, count(*) FROM 'arrests-latest.parquet' GROUP BY 1 ORDER BY 2 DESC"
 ```
+
+Note that `q.py` queries do not probe the schema, so a query naming a dropped
+column (`arresting_agency`, `book_in_aor`, `apprehension_site_landmark`) now
+fails. Use the current release's column names, or
+`DESCRIBE SELECT * FROM read_parquet(...)` first.
 
 Full queries for C1, C2, and C3 are in the session that produced this file.

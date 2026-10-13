@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
@@ -30,6 +31,7 @@ from ice_detention_pathway import (
     ArrestEvent,
     LookupError,
     Stay,
+    arrest_location_expr,
     available_columns,
     clean_arrest_location,
     duration_text,
@@ -149,25 +151,25 @@ def fetch_evidence(
     connection = duckdb.connect(database=":memory:")
     connection.execute("SET TimeZone = 'UTC'")
     try:
+        arrest_present = available_columns(connection, arrests_file)
         arrest_rows = connection.execute(
-            """
-            SELECT apprehension_date_time,
-                   apprehension_date,
-                   coalesce(
-                       nullif(trim(apprehension_site_landmark), ''),
-                       nullif(trim(apprehension_state_filled_in), ''),
-                       nullif(trim(apprehension_aor), '')
-                   ) AS arrest_location,
-                   apprehension_aor,
-                   apprehension_method,
-                   arresting_agency,
-                   final_program,
-                   file_original,
-                   sheet_original,
-                   row_original
+            f"""
+            SELECT {arrest_location_expr(arrest_present)},
+                   {optional_column('apprehension_date_time', arrest_present, '')}
+                       AS apprehension_date_time,
+                   {optional_column('apprehension_date', arrest_present, '')}
+                       AS apprehension_date,
+                   {optional_column('apprehension_aor', arrest_present, '')} AS aor,
+                   {optional_column('apprehension_method', arrest_present, '')} AS method,
+                   {optional_column('arresting_agency', arrest_present, '')}
+                       AS arresting_agency,
+                   {optional_column('final_program', arrest_present, '')} AS program,
+                   {optional_column('file_original', arrest_present, '')} AS file_original,
+                   {optional_column('sheet_original', arrest_present, '')} AS sheet_original,
+                   {optional_column('row_original', arrest_present, '')} AS row_original
             FROM read_parquet(?)
             WHERE unique_identifier = ?
-            ORDER BY apprehension_date_time NULLS LAST
+            ORDER BY 1 NULLS LAST
             """,
             [str(arrests_file), identifier],
         ).fetchall()
@@ -190,9 +192,9 @@ def fetch_evidence(
                    {optional_column('detention_release_reason', present)} AS reason,
                    {optional_column('final_program', present)} AS program,
                    {optional_column('book_in_aor', present)} AS book_in_aor,
-                   d.file_original,
-                   d.sheet_original,
-                   d.row_original
+                   {optional_column('file_original', present)} AS file_original,
+                   {optional_column('sheet_original', present)} AS sheet_original,
+                   {optional_column('row_original', present)} AS row_original
             FROM read_parquet(?) d
             LEFT JOIN (
                 SELECT detention_facility_code, max(name) AS name
@@ -203,20 +205,30 @@ def fetch_evidence(
             WHERE d.unique_identifier = ?
             ORDER BY d.book_in_date_time NULLS LAST,
                      d.book_out_date_time NULLS LAST,
-                     d.row_original NULLS LAST
+                     {optional_column('row_original', present, 'd')} NULLS LAST
             """,
             [str(detention_file), str(facilities_file), identifier],
         ).fetchall()
 
-        scope = connection.execute(
-            """
-            SELECT apprehension_aor, arresting_agency, count(*) AS rows
-            FROM read_parquet(?)
-            GROUP BY 1, 2
-            ORDER BY rows DESC
-            """,
-            [str(arrests_file)],
-        ).fetchall()
+        scope_columns = [
+            column
+            for column in ("apprehension_aor", "arresting_agency")
+            if column in arrest_present
+        ]
+        group_by = ", ".join(str(index) for index in range(1, len(scope_columns) + 1))
+        scope = (
+            connection.execute(
+                f"""
+                SELECT {", ".join(scope_columns)}, count(*) AS arrest_rows
+                FROM read_parquet(?)
+                GROUP BY {group_by}
+                ORDER BY arrest_rows DESC
+                """,
+                [str(arrests_file)],
+            ).fetchall()
+            if scope_columns
+            else []
+        )
     finally:
         connection.close()
 
@@ -228,7 +240,7 @@ def fetch_evidence(
 
     arrests = [
         ArrestRecord(
-            event=ArrestEvent(row[0], row[1], row[2]),
+            event=ArrestEvent(row[1], row[2], row[0]),
             aor=row[3],
             method=row[4],
             arresting_agency=row[5],
@@ -451,7 +463,7 @@ def print_report(
     identifier: str,
     stays: Sequence[StayRecord],
     unmatched: Sequence[ArrestRecord],
-    scope: Sequence[tuple[str, str, int]],
+    scope: Sequence[tuple[Any, ...]],
     files: Sequence[tuple[str, Path]],
 ) -> None:
     print(RULE)
@@ -464,8 +476,13 @@ def print_report(
         print(f"   {'':<11} sha256 {file_digest(path)}  {path.stat().st_size:,} bytes")
 
     print("\n2. SCOPE OF THE LOCAL ARRESTS DATA (what is NOT in this copy)")
-    for aor, agency, rows in scope:
-        print(f"   {rows:>8,}  {agency or 'unknown agency'}  |  {aor or 'unknown AOR'}")
+    if scope:
+        for row in scope:
+            categories = "  |  ".join(str(value) or "unknown" for value in row[:-1])
+            print(f"   {row[-1]:>8,}  {categories}")
+    else:
+        print("   This arrests release publishes no scope fields, so the copy")
+        print("   cannot be shown to exclude any category of arrest.")
     print("   Any arrest outside these categories cannot appear, whether or not")
     print("   it happened. Absence here is not evidence of absence in reality.")
 

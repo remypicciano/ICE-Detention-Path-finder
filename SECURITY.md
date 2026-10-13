@@ -45,7 +45,8 @@ Out of scope:
 - Never post real identifiers or generated pathways for real people in issues,
   PRs, or screenshots.
 - The application makes no network requests during lookups. Network use is
-  limited to the explicit dataset-download feature, which validates every
-  download (HTTPS, readable Parquet, expected columns) before replacing local
-  files.
+  limited to two explicit features: the dataset download, which validates
+  every download (HTTPS, readable Parquet, expected columns) before replacing
+  local files, and the update check (`update_check.py`), which only reads
+  GitHub's latest-release metadata — it never downloads or replaces a file.
 - Datasets are excluded from Git and from application bundles. Keep it that way.
