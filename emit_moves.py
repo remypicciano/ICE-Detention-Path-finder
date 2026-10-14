@@ -61,7 +61,12 @@ from pathlib import Path
 
 import duckdb
 
-from ice_detention_pathway import MANUAL_EDIT_MARK, dataset_release, release_stamp
+from ice_detention_pathway import (
+    MANUAL_EDIT_MARK,
+    arrest_location_expr,
+    dataset_release,
+    release_stamp,
+)
 
 ARRESTS_FILE = "arrests-latest.parquet"
 DETENTION_FILE = "detention-stints-latest.parquet"
@@ -183,13 +188,12 @@ def collect(
             if district is not None:
                 facility_districts[str(code)] = str(district)
 
-    city_expr = _first(arrest_cols, ("apprehension_city_original", "apprehension_city_common_case"))
-    state_expr = _first(
-        arrest_cols, ("apprehension_state_original", "apprehension_state_filled_in")
-    )
-    landmark_expr = _first(
-        arrest_cols, ("event_landmark", "apprehension_site_landmark")
-    )
+    # The MOVES location comes from the core's own expression, so a MOVES
+    # line and a pathway text can never disagree: the publisher's normalized
+    # city and corrected state outrank the hand-typed originals, and a
+    # placeholder landmark ("... GENERAL AREA") is excluded instead of being
+    # rendered as a place (AUDIT A0.3/A0.4).
+    location_expr = arrest_location_expr(arrest_cols, "")
     arrest_age_expr = _first(
         arrest_cols, ("age_at_apprehension_approximate",), "NULL::DOUBLE"
     )
@@ -201,8 +205,7 @@ def collect(
         for row in connection.execute(
             f"""
             SELECT unique_identifier, apprehension_date_time,
-                   {city_expr} AS city, {state_expr} AS state,
-                   {landmark_expr} AS landmark, {arrest_age_expr} AS age,
+                   {location_expr} AS location, {arrest_age_expr} AS age,
                    {arrest_birth_expr} AS birth_year
             FROM read_parquet(?) WHERE unique_identifier IN ({placeholders})
             """,
@@ -249,8 +252,13 @@ def collect(
         # from the detention rows themselves. It is never taken from the court
         # district: a person with no arrest record still has a birth year, and
         # a district in the dob line would be a fabricated fact.
-        record.dob = _clean(arrest[6] if arrest else None) or _clean(stints[0][7])
-        record.age = _int(arrest[5] if arrest else None) or _int(stints[0][5])
+        # Arrest tuple shape matches the SELECT: uid, when, location, age, birth.
+        if arrest is not None:
+            _, _, _, arrest_age, arrest_birth = arrest
+        else:
+            arrest_age = arrest_birth = None
+        record.dob = _clean(arrest_birth) or _clean(stints[0][7])
+        record.age = _int(arrest_age) or _int(stints[0][5])
         record.district = next((_clean(row[6]) for row in stints if _clean(row[6])), "")
 
         for _, facility, code, book_in, book_out, _, _, _ in stints:
@@ -272,15 +280,9 @@ def collect(
             record.arrest_stamp = "(NO ARREST RECORD IN THIS DATASET)"
             record.location = ""
         else:
-            _, when, city, state, landmark, _, _ = arrest
+            _, when, arrest_location, _, _ = arrest
             record.arrest_stamp = release_stamp(when)
-            city_text, state_text, landmark_text = _clean(city), _clean(state), _clean(landmark)
-            if city_text:
-                location = ", ".join(p for p in (city_text, state_text) if p)
-            else:
-                # Older releases carry no arrest city, only a landmark.
-                location = landmark_text or state_text or "(LOCATION NOT RECORDED)"
-            record.location = location
+            record.location = _clean(arrest_location) or "(LOCATION NOT RECORDED)"
         records.append(record)
     return records
 

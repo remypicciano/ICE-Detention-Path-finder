@@ -145,6 +145,69 @@ would multiply stints and corrupt every stay boundary.
 Not wired in. It is the most promising route to restoring the dropped case
 fields, but only with episode-level deduplication.
 
+### A0.9 — Release-crossing tools (`emit_moves.py`, `link_releases.py`) · 2026-10
+
+Audited against the 2.1.1 code. Two P1 findings were demonstrated on synthetic
+releases and fixed in 2.1.2; the rest remain open.
+
+**FIXED in 2.1.2 — `emit_moves` reintroduced A0.3 and A0.4 (P1).** The MOVES
+line re-implemented the arrest location with its own column picks, inverting
+both lineages: it preferred the hand-typed `apprehension_city_original` /
+`apprehension_state_original` over the publisher's normalized
+`apprehension_city_common_case` / `apprehension_state_filled_in`, and used a
+placeholder landmark as the location whenever no city was recorded. Fixed by
+selecting the location through the core's `arrest_location_expr`, so a MOVES
+line and a pathway text can no longer disagree. Regression tests:
+`test_emit_location_prefers_the_normalized_city_and_state`,
+`test_emit_location_excludes_placeholder_landmarks`.
+
+**FIXED in 2.1.2 — crosswalk mislabelled `closed_and_extended` as `exact`
+(P1).** `attach_pathways` re-derived the match shape from `stints_appended`,
+losing the three-way classification `classify` had already computed. A final
+stint that gained its book-out (path changed, no stints appended) was reported
+as `exact` — the strongest claim a crosswalk makes. Fixed by emitting the
+classifier's status verbatim. Regression test:
+`test_closed_and_extended_is_reported_as_such`.
+
+**OPEN — flagged duplicates are unmarked in MOVES segments (P2).** The core
+renders `duplicate_drop_row` rows with a `[FLAGGED DUPLICATE ROW]` marker;
+`emit_moves` renders the canonical facility name with no marker, so a
+possibly-duplicate book-in/out reads as fact in the most reused output.
+
+**OPEN — crosswalk fingerprints include flagged duplicates (P2).** Path
+segments are built from every row. A later release that drops a duplicate the
+earlier one kept changes the fingerprint shape and can turn a true match into
+`not_found`/`ambiguous`. Excluding `duplicate_drop_row` rows consistently on
+both sides would make matching robust to publisher-side dedup.
+
+**OPEN — multiple arrests resolve silently to the last row (P2).** The arrest
+lookup dict-comprehends an unordered select, so a person with several arrests
+gets one arbitrary arrest stamp on their MOVES line. The core tracks every
+arrest (`arrests_without_stay`). Needs a deterministic order and an
+"additional arrests not shown" marker.
+
+**OPEN — arrest-with-no-detention people are refused (P2).** `emit_moves`
+exits `Not present in this release` for an identifier that has an arrest row
+but no stints, where the core renders `[ARREST WITH NO RECORDED DETENTION]`
+and `Record.moves_line` already has the `(NO DETENTION RECORD IN THIS DATASET)`
+form. Only the absent-id guard blocks it; the two cases need separating.
+
+**OPEN — MOVES output names no absent source fields (P3).** The core names
+dropped fields via `missing_source_fields`; an empty `district-`/`age-` line
+says nothing about whether the publisher stopped publishing the field or left
+the person's value empty. The manifest could carry the absent-expected-columns
+list.
+
+**OPEN — crosswalk omits candidates for ambiguous entries (P3).** The
+crosswalk file records `status: ambiguous` with a null new identifier, but the
+candidate ids live only in the JSON bundle. Carrying them in the crosswalk
+makes the durable artifact self-contained.
+
+**OPEN — `any_value` absorbs intra-person demographic conflicts (P3).** The
+people tables collapse `birth_year`/`gender` with `any_value`; a handful of
+identifiers carry internal conflicts, and an arbitrary pick there can flip a
+match verdict.
+
 ---
 
 ## A. Code bugs
