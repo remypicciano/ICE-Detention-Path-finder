@@ -7,7 +7,8 @@ a = Analysis(
     ["ice_detention_pathway_gui.py"],
     pathex=[],
     binaries=[],
-    datas=[],
+    # The window icon at runtime; the same art becomes app.ico / app.icns.
+    datas=[("assets/ice_cube.png", "assets")],
     hiddenimports=["pytz", "uuid"],
     hookspath=[],
     hooksconfig={},
@@ -31,6 +32,7 @@ if sys.platform == "darwin":
         upx=False,
         console=False,
         argv_emulation=False,
+        icon=None,
         target_arch=None,
         codesign_identity=None,
         entitlements_file=None,
@@ -48,6 +50,7 @@ if sys.platform == "darwin":
         name="ICEDetentionPathway.app",
         icon=None,
         bundle_identifier="dev.remypicciano.icedetentionpathway",
+        icon="assets/app.icns",
         info_plist={
             "CFBundleDisplayName": "ICE Detention Pathway",
             "CFBundleShortVersionString": "2.1.2",
@@ -70,4 +73,5 @@ else:
         console=False,
         disable_windowed_traceback=False,
         version="version_info.txt" if sys.platform == "win32" else None,
+        icon="assets/app.ico" if sys.platform == "win32" else None,
     )

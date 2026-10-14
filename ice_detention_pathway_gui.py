@@ -78,6 +78,24 @@ FACILITIES_FILE = PROJECT_DIR / "facilities-latest.parquet"
 
 ARRESTS_NAME = "arrests-latest.parquet"
 DETENTION_NAME = "detention-stints-latest.parquet"
+
+
+def bundled_asset(name: str) -> Path | None:
+    """Locate an asset shipped with the app.
+
+    Checked inside the frozen build (`_MEIPASS`, set for onefile and onedir
+    alike), then beside the executable, then beside the source file. A missing
+    asset returns None rather than raising: an icon problem must never stop a
+    lookup.
+    """
+    candidates: list[Path] = []
+    frozen_bundle = getattr(sys, "_MEIPASS", None)
+    if frozen_bundle:
+        candidates.append(Path(frozen_bundle) / "assets" / name)
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent / "assets" / name)
+    candidates.append(Path(__file__).resolve().parent / "assets" / name)
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
 FACILITIES_NAME = "facilities-latest.parquet"
 
 
@@ -187,6 +205,11 @@ class LookupWindow:
         self.root = root
         self.root.title(f"{APP_NAME} v{APP_VERSION}")
         self.root.minsize(720, 570)
+        # The window is fixed-size on purpose: results, status text and
+        # release switches must scroll inside it, never stretch it. The exact
+        # size is pinned once the widgets exist (`_freeze_window_size`).
+        self.root.resizable(False, False)
+        self._apply_window_icon()
         self.last_pathway: Pathway | None = None
         # Manual entries belong to the person they were typed for. Keyed by
         # identifier so switching people cannot carry one person's correction
@@ -391,7 +414,34 @@ class LookupWindow:
         self.export_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
 
         self.identifier_entry.focus_set()
+        self._freeze_window_size()
         self.refresh_recent()
+
+    def _apply_window_icon(self) -> None:
+        """Show the melting-ice-cube icon in the title bar and taskbar."""
+        asset = bundled_asset("ice_cube.png")
+        if asset is None:
+            return
+        try:
+            self.window_icon = tk.PhotoImage(file=str(asset))
+        except tk.TclError:
+            return
+        self.root.iconphoto(True, self.window_icon)
+
+    def _freeze_window_size(self) -> None:
+        """Pin the window to its laid-out size so content can never resize it.
+
+        Measured from the widgets' requested sizes, taking the larger of the
+        minimum and the request so nothing is clipped. `minsize == maxsize`
+        then holds the frame at that size: a long status line, a big result,
+        or a release switch is clipped or scrolled, never allowed to stretch
+        the window.
+        """
+        width = max(self.root.winfo_reqwidth(), 720)
+        height = max(self.root.winfo_reqheight(), 570)
+        self.root.geometry(f"{width}x{height}")
+        self.root.minsize(width, height)
+        self.root.maxsize(width, height)
 
     def set_result(self, value: str, *, editable: bool = False) -> None:
         self.result_box.configure(state=tk.NORMAL)
@@ -1473,8 +1523,17 @@ def main() -> int:
         bundled_self_test()
         root = tk.Tk()
         root.withdraw()
-        LookupWindow(root)
+        window = LookupWindow(root)
         root.update_idletasks()
+        # The window must be pinned: later content changes may not resize it.
+        assert root.minsize() == root.maxsize(), (
+            f"window size not frozen: minsize={root.minsize()} "
+            f"maxsize={root.maxsize()}"
+        )
+        # And the melting-ice-cube icon must have loaded from the bundle.
+        assert getattr(window, "window_icon", None) is not None, (
+            "the bundled window icon did not load"
+        )
         root.destroy()
         return 0
     root = tk.Tk()
