@@ -422,6 +422,10 @@ def attach_pathways(
             continue
         link.pathway = pathway
         pathway_dict = pathway_to_dict(pathway)
+        # `link.status` already carries the true match shape from `classify`
+        # (exact / extended / closed_and_extended); re-deriving it from
+        # `grew_by` would mislabel a closed-and-extended link that appended
+        # no stints as "exact".
         results.append(
             {
                 "identifier": link.old_id,
@@ -429,12 +433,12 @@ def attach_pathways(
                 "status": "ok",
                 "link_confidence": "validated",
                 "new_identifier": link.new_id,
-                "match_type": MATCH_EXACT if link.grew_by == 0 else MATCH_EXTENDED,
+                "match_type": link.status,
                 "stints_appended": link.grew_by,
                 "pathway": pathway_dict,
                 "text": format_pathway(pathway),
                 "detail": (
-                    f"{MATCH_EXACT if link.grew_by == 0 else MATCH_EXTENDED}; "
+                    f"{link.status}; "
                     f"{pathway_dict['totals']['stays']} stays, "
                     f"{pathway_dict['totals']['detention_rows']} rows, "
                     f"+{link.grew_by} stint(s) since the old export"

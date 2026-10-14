@@ -51,25 +51,50 @@ def write_release(
     """
     directory.mkdir(parents=True, exist_ok=True)
     landmark_col = "event_landmark" if generation == "NEW" else "apprehension_site_landmark"
+    # The current release publishes the publisher's normalized city and
+    # corrected state beside the hand-typed originals; the earlier one does
+    # not. Tests exercise precedence by supplying `city_common` / `state_filled`
+    # explicitly; otherwise the normalized columns mirror the raw values.
+    normalized_fields = (
+        [
+            pa.field("apprehension_city_common_case", pa.string()),
+            pa.field("apprehension_state_filled_in", pa.string()),
+        ]
+        if generation == "NEW"
+        else []
+    )
 
     arrest_schema = pa.schema(
         [
-            ("unique_identifier", pa.string()),
-            ("apprehension_date_time", pa.timestamp("us", tz="UTC")),
-            ("apprehension_date", pa.date32()),
-            ("apprehension_city_original", pa.string()),
-            ("apprehension_state_original", pa.string()),
-            (landmark_col, pa.string()),
-            ("age_at_apprehension_approximate", pa.float64()),
-            ("birth_year", pa.int32()),
+            pa.field("unique_identifier", pa.string()),
+            pa.field("apprehension_date_time", pa.timestamp("us", tz="UTC")),
+            pa.field("apprehension_date", pa.date32()),
+            pa.field("apprehension_city_original", pa.string()),
+            *normalized_fields,
+            pa.field("apprehension_state_original", pa.string()),
+            pa.field(landmark_col, pa.string()),
+            pa.field("age_at_apprehension_approximate", pa.float64()),
+            pa.field("birth_year", pa.int32()),
         ]
     )
+    def normalized(row: dict) -> dict:
+        """The publisher-normalized columns for one row (NEW generation only)."""
+        if generation != "NEW":
+            return {}
+        return {
+            "apprehension_city_common_case": row.get("city_common", row.get("city")),
+            "apprehension_state_filled_in": row.get(
+                "state_filled", row.get("state")
+            ),
+        }
+
     arrest_rows = [
         {
             "unique_identifier": row["uid"],
             "apprehension_date_time": _ts(row.get("when")),
             "apprehension_date": None,
             "apprehension_city_original": row.get("city"),
+            **normalized(row),
             "apprehension_state_original": row.get("state"),
             landmark_col: row.get("landmark"),
             "age_at_apprehension_approximate": row.get("age"),
@@ -343,6 +368,58 @@ def test_emit_dob_is_the_birth_year_even_without_an_arrest_record(tmp_path) -> N
     assert "(NO ARREST RECORD IN THIS DATASET)" in text
 
 
+def test_emit_location_excludes_placeholder_landmarks(tmp_path) -> None:
+    """AUDIT A0.3: `... GENERAL AREA` is a coverage statement, not a place.
+
+    With no recorded city the MOVES line must fall through to the state
+    rather than present the placeholder as the arrest's location.
+    """
+    release = write_release(
+        tmp_path / "release",
+        arrests=[
+            dict(
+                uid="uid-ph",
+                when="2024-01-02T03:04:00",
+                city=None,
+                state="TEXAS",
+                landmark="DALLAS COUNTY GENERAL AREA",
+                birth_year=1987,
+            )
+        ],
+        stints=[dict(OLD_PATH[0], uid="uid-ph")],
+    )
+    text = run_emit(tmp_path, [{"identifier": "uid-ph"}], release)
+
+    moves = next(line for line in text.splitlines() if line.startswith("MOVES: "))
+    assert "DALLAS COUNTY GENERAL AREA" not in moves
+    assert "TEXAS" in moves
+
+
+def test_emit_location_prefers_the_normalized_city_and_state(tmp_path) -> None:
+    """AUDIT A0.4: the raw hand-typed columns are never silently substituted."""
+    release = write_release(
+        tmp_path / "release",
+        arrests=[
+            dict(
+                uid="uid-norm",
+                when="2024-01-02T03:04:00",
+                city="CONROE",
+                city_common="Conroe",
+                state="texs",
+                state_filled="TEXAS",
+                birth_year=1987,
+            )
+        ],
+        stints=[dict(OLD_PATH[0], uid="uid-norm")],
+    )
+    text = run_emit(tmp_path, [{"identifier": "uid-norm"}], release)
+
+    moves = next(line for line in text.splitlines() if line.startswith("MOVES: "))
+    assert "Conroe, TEXAS" in moves
+    assert "CONROE" not in moves
+    assert "texs" not in moves
+
+
 def test_emit_refuses_identifiers_the_release_does_not_hold(tmp_path) -> None:
     release = write_release(
         tmp_path / "release",
@@ -416,6 +493,45 @@ def test_old_identifier_resolves_to_the_new_re_salt(tmp_path) -> None:
             "new_identifier": "new-uid-1",
             "status": "extended",
             "stints_appended": 1,
+        }
+    ]
+
+
+def test_closed_and_extended_is_reported_as_such(tmp_path) -> None:
+    """A final stint that gained its book-out changed the path.
+
+    `stints_appended` stays 0 here, so a crosswalk that re-derived the match
+    shape from it would call this link `exact` — the strongest claim it can
+    make — while the path on record actually differs.
+    """
+    old_dir = write_release(
+        tmp_path / "old", arrests=[], stints=OLD_PATH, generation="OLD"
+    )
+    new_stints = path_for("new-uid-1")
+    new_stints[1]["book_out"] = "2024-03-05T10:00:00"
+    new_dir = write_release(tmp_path / "new", arrests=[], stints=new_stints)
+    crosswalk = tmp_path / "crosswalk.json"
+
+    status = link_main(
+        [
+            str(write_inputs(tmp_path / "ids.json", ["old-uid-1"])),
+            "--old-dir",
+            str(old_dir),
+            "--new-dir",
+            str(new_dir),
+            "--out-crosswalk",
+            str(crosswalk),
+        ]
+    )
+
+    assert status == 0
+    links = json.loads(crosswalk.read_text(encoding="utf-8"))["links"]
+    assert links == [
+        {
+            "old_identifier": "old-uid-1",
+            "new_identifier": "new-uid-1",
+            "status": "closed_and_extended",
+            "stints_appended": 0,
         }
     ]
 
