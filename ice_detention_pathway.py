@@ -35,7 +35,7 @@ DEFAULT_FACILITIES_FILE = Path("facilities-latest.parquet")
 # `version_info.txt`, and the PyInstaller spec mirror it per
 # docs/release-process.md, and `update_check` compares it against the latest
 # GitHub release tag.
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.1.1"
 
 # An arrest is treated as opening a stay that begins at or after it. Book-in
 # times occasionally precede the arrest by a little; this tolerance absorbs that
