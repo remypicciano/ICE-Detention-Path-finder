@@ -48,7 +48,6 @@ if sys.platform == "darwin":
     app = BUNDLE(
         collection,
         name="ICEDetentionPathway.app",
-        icon=None,
         bundle_identifier="dev.remypicciano.icedetentionpathway",
         icon="assets/app.icns",
         info_plist={
