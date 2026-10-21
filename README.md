@@ -364,7 +364,8 @@ emit_moves.py                  Marked, delimited MOVES export for a list of ids
 link_releases.py               Old → new identifier crosswalk across releases
 q.py                           Ad-hoc SQL against the local Parquet files
 parquet_viewer.py              Bounded Parquet schema/row inspector
-data-sources.example.json      Dataset download URLs (copy to data-sources.json)
+data-sources.json              Dataset download URLs (shipped with the app)
+data-sources.example.json      Template for a customised copy
 docs/                          Architecture and output-format documentation
 AUDIT.md                       Known bugs and data issues, severity-ranked
 test_*.py                      Automated tests

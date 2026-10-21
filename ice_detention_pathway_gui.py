@@ -17,7 +17,7 @@ from tkinter.scrolledtext import ScrolledText
 
 import duckdb
 
-from fetch_data import DownloadError, DownloadResult, download_all
+from fetch_data import DownloadError, DownloadResult, download_all, load_sources
 from ice_detention_pathway import (
     APP_VERSION,
     EDITABLE_FIELDS,
@@ -418,15 +418,21 @@ class LookupWindow:
         self.refresh_recent()
 
     def _apply_window_icon(self) -> None:
-        """Show the melting-ice-cube icon in the title bar and taskbar."""
+        """Show the ice-cube icon in the title bar and taskbar.
+
+        The icon is cosmetic, so a failure here must never stop the app from
+        starting. If the image cannot be read the bundle icon is left in
+        place; a partly applied icon would leave the Dock with no image at
+        all, which macOS answers with a placeholder of its own.
+        """
         asset = bundled_asset("ice_cube.png")
         if asset is None:
             return
         try:
             self.window_icon = tk.PhotoImage(file=str(asset))
+            self.root.iconphoto(True, self.window_icon)
         except tk.TclError:
             return
-        self.root.iconphoto(True, self.window_icon)
 
     def _freeze_window_size(self) -> None:
         """Pin the window to its laid-out size so content can never resize it.
@@ -1514,6 +1520,14 @@ def bundled_self_test() -> None:
     finally:
         connection.close()
 
+    # A packaged build has to find the dataset URLs wherever it was moved to,
+    # so the shipped copy is checked here rather than at the first download.
+    try:
+        sources = load_sources(PROJECT_DIR)
+    except DownloadError as error:
+        raise AssertionError(f"the dataset URLs could not be found: {error}") from error
+    assert "arrests-latest.parquet" in sources, "the dataset URLs are incomplete"
+
 
 def main() -> int:
     if "--self-test" in sys.argv:
@@ -1530,7 +1544,7 @@ def main() -> int:
             f"window size not frozen: minsize={root.minsize()} "
             f"maxsize={root.maxsize()}"
         )
-        # And the melting-ice-cube icon must have loaded from the bundle.
+        # And the ice-cube icon must have loaded from the bundle.
         assert getattr(window, "window_icon", None) is not None, (
             "the bundled window icon did not load"
         )
