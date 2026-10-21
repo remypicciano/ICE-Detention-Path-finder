@@ -18,6 +18,7 @@ its URLs. See `data-sources.example.json`.
 from __future__ import annotations
 
 import argparse
+import errno
 import io
 import json
 import os
@@ -262,6 +263,12 @@ def download_one(
                         progress(filename, written, total)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         temporary.unlink(missing_ok=True)
+        if isinstance(exc, OSError) and exc.errno == errno.EROFS:
+            raise DownloadError(
+                f"Could not write {filename} to {project_dir}: the folder is "
+                "read-only. Move the app to a folder you can write to, or set "
+                "ICE_PATHWAY_DATA to one."
+            ) from exc
         raise DownloadError(f"Could not download {filename}: {exc}") from exc
 
     try:
@@ -309,6 +316,12 @@ def download_all(
         selected = sources
 
     results = []
+    try:
+        project_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise DownloadError(
+            f"Could not prepare the folder {project_dir}: {exc}"
+        ) from exc
     for filename, url in selected.items():
         results.append(download_one(filename, url, project_dir, progress))
     return results

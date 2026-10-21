@@ -227,3 +227,20 @@ def test_joined_file_download_accepts_matching_columns(tmp_path, monkeypatch) ->
     assert result.filename == "joined-arrests-detention-stays-latest.parquet"
     assert result.rows == 2
     assert (tmp_path / "joined-arrests-detention-stays-latest.parquet").is_file()
+
+
+def test_download_creates_the_folder_it_writes_into(tmp_path, monkeypatch) -> None:
+    """A fresh install has no data folder yet, and the download makes one."""
+    payload = write_parquet(tmp_path / "source.parquet")
+    stub_urlopen(monkeypatch, payload)
+    monkeypatch.setattr(
+        fetch_data,
+        "load_sources",
+        lambda project_dir: {"arrests-latest.parquet": "https://example.test/a.parquet"},
+    )
+    target = tmp_path / "your data folder"
+
+    results = download_all(target)
+
+    assert results[0].filename == "arrests-latest.parquet"
+    assert (target / "arrests-latest.parquet").is_file()

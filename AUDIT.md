@@ -543,6 +543,18 @@ released, and the self-test fails a build that does not carry it.
 together failed the packaging step and no macOS artifact was published. The
 two are staged in one folder and archived from there.
 
+### D8 — The download failed on a read-only app folder · P1 · FIXED in 2.1.5
+
+The app downloaded the datasets into the folder beside itself. A fresh copy
+does not always sit somewhere the user can write to: macOS runs an app opened
+straight from a download from a read-only translocation, and an app in
+`/Applications` is not the user's to change. The download then failed with
+*read-only file system* and the user got nothing. The app now writes to the
+folder beside it when that folder can be written to, and to
+`~/.ice_pathway/data` otherwise, and reads the files from either place.
+Regression tests: `test_data_folder_is_the_users_own_when_the_app_folder_cannot_be_written`,
+`test_dataset_files_come_from_the_data_folder_when_it_has_them`.
+
 ---
 
 ## Reproducing the counts

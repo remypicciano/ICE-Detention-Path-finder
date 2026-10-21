@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import tkinter as tk
@@ -72,12 +73,60 @@ def application_directory() -> Path:
 
 
 PROJECT_DIR = application_directory()
-ARRESTS_FILE = PROJECT_DIR / "arrests-latest.parquet"
-DETENTION_FILE = PROJECT_DIR / "detention-stints-latest.parquet"
-FACILITIES_FILE = PROJECT_DIR / "facilities-latest.parquet"
 
 ARRESTS_NAME = "arrests-latest.parquet"
 DETENTION_NAME = "detention-stints-latest.parquet"
+FACILITIES_NAME = "facilities-latest.parquet"
+
+
+def user_data_directory() -> Path:
+    """The user's own folder for the datasets the app downloads.
+
+    A released copy does not always sit somewhere the user can write to:
+    macOS runs an app opened straight from a download from a read-only
+    translocation, and an app in /Applications belongs to the system. The
+    datasets are large and belong to the person using them, so they are kept
+    in their own folder and the app reads them from there.
+    """
+    base = Path(os.environ.get("ICE_PATHWAY_DATA", Path.home() / ".ice_pathway"))
+    return base / "data"
+
+
+def data_directory() -> Path:
+    """The folder the datasets are read from and written to.
+
+    Beside the app when that folder can be written to, which is where the
+    files have always been kept, and in the user's own folder otherwise. A
+    read-only app folder is the reason this exists: writing a download there
+    fails with "read-only file system" and the user gets nothing.
+    """
+    if os.access(PROJECT_DIR, os.W_OK):
+        return PROJECT_DIR
+    directory = user_data_directory()
+    with suppress(OSError):
+        directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def dataset_path(name: str) -> Path:
+    """The copy of a dataset to read.
+
+    The one in the data folder, and otherwise the one beside the app, so a
+    user who already keeps the files next to the app keeps working even when
+    that folder cannot be written to.
+    """
+    in_data = data_directory() / name
+    if in_data.exists():
+        return in_data
+    beside = PROJECT_DIR / name
+    if beside.exists():
+        return beside
+    return in_data
+
+
+ARRESTS_FILE = dataset_path(ARRESTS_NAME)
+DETENTION_FILE = dataset_path(DETENTION_NAME)
+FACILITIES_FILE = dataset_path(FACILITIES_NAME)
 
 
 def bundled_asset(name: str) -> Path | None:
@@ -96,7 +145,6 @@ def bundled_asset(name: str) -> Path | None:
         candidates.append(Path(sys.executable).resolve().parent / "assets" / name)
     candidates.append(Path(__file__).resolve().parent / "assets" / name)
     return next((candidate for candidate in candidates if candidate.is_file()), None)
-FACILITIES_NAME = "facilities-latest.parquet"
 
 
 def detect_releases() -> dict[str, tuple[Path, Path, Path]]:
@@ -107,7 +155,12 @@ def detect_releases() -> dict[str, tuple[Path, Path, Path]]:
     are deduplicated on release generation and file size — metadata only, no
     table scan, and two different releases never share both.
     """
-    directories = [PROJECT_DIR, *sorted(PROJECT_DIR.glob("ddp-*"))]
+    directories = [
+        PROJECT_DIR,
+        *sorted(PROJECT_DIR.glob("ddp-*")),
+        user_data_directory(),
+        *sorted(user_data_directory().glob("ddp-*")),
+    ]
     releases: dict[str, tuple[Path, Path, Path]] = {}
     seen: set[tuple[str, int, int]] = set()
     connection = duckdb.connect(database=":memory:")
@@ -124,7 +177,12 @@ def detect_releases() -> dict[str, tuple[Path, Path, Path]]:
             if key in seen:
                 continue
             seen.add(key)
-            where = "current folder" if directory == PROJECT_DIR else directory.name
+            if directory == PROJECT_DIR:
+                where = "current folder"
+            elif directory == user_data_directory():
+                where = "your data folder"
+            else:
+                where = directory.name
             releases[f"{tag} — {where}"] = (arrests, detention, facilities)
     finally:
         connection.close()
@@ -874,18 +932,27 @@ class LookupWindow:
             self.root.after(0, self.status.configure, {"text": text})
 
         try:
-            results = download_all(PROJECT_DIR, progress=progress)
+            results = download_all(data_directory(), progress=progress)
         except (DownloadError, OSError) as exc:
             self.root.after(0, self.show_download_error, str(exc))
             return
         self.root.after(0, self.show_download_result, results)
 
     def show_download_result(self, results: list[DownloadResult]) -> None:
+        global ARRESTS_FILE, DETENTION_FILE, FACILITIES_FILE
         summary = "\n".join(
             f"{result.filename}: {result.rows:,} rows, "
             f"{result.bytes_written / 1e6:,.1f} MB"
             for result in results
         )
+        # The download may have landed in the user's own folder rather than
+        # beside the app, so the files the app reads are looked up again and
+        # the list of releases is refreshed.
+        ARRESTS_FILE = dataset_path(ARRESTS_NAME)
+        DETENTION_FILE = dataset_path(DETENTION_NAME)
+        FACILITIES_FILE = dataset_path(FACILITIES_NAME)
+        self.releases = detect_releases()
+        self.release_selector.configure(values=list(self.releases))
         self.status.configure(text="Download complete.")
         self.search_button.configure(state=tk.NORMAL)
         self.download_button.configure(state=tk.NORMAL)

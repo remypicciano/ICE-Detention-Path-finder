@@ -67,6 +67,11 @@ looks for the dataset URLs beside itself and falls back to the copy inside
 itself. The macOS archive is staged in one folder before it is zipped, because
 `ditto` archives a single source.
 
+The app writes the datasets it downloads to the folder beside itself when that
+folder can be written to, and to `~/.ice_pathway/data` otherwise. A release
+that changes where the app writes has to keep that fallback, or users who
+cannot write next to the app get nothing.
+
 Watch the workflow run on the
 [Actions tab](https://github.com/remypicciano/ICE-Detention-Path-finder/actions)
 and confirm the release appears with all five artifacts. The generated notes

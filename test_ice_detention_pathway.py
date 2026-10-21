@@ -1330,3 +1330,46 @@ def test_window_shows_the_version_and_every_button() -> None:
             assert right_edge <= width, f"the {label} button is outside the window"
     finally:
         root.destroy()
+
+
+def test_data_folder_is_the_users_own_when_the_app_folder_cannot_be_written(
+    monkeypatch, tmp_path
+) -> None:
+    """A released app can sit where the user cannot write to it.
+
+    macOS runs an app opened straight from a download from a read-only
+    translocation, so a download written beside the app fails with
+    "read-only file system" and the user gets nothing.
+    """
+    import ice_detention_pathway_gui as gui
+
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    monkeypatch.setattr(gui, "PROJECT_DIR", app_dir)
+    monkeypatch.setenv("ICE_PATHWAY_DATA", str(tmp_path / "user"))
+    monkeypatch.setattr(gui.os, "access", lambda path, mode: False)
+
+    assert gui.data_directory() == tmp_path / "user" / "data"
+    assert gui.data_directory().is_dir()
+
+
+def test_dataset_files_come_from_the_data_folder_when_it_has_them(
+    monkeypatch, tmp_path
+) -> None:
+    """Files already beside the app keep being read, and the data folder wins."""
+    import ice_detention_pathway_gui as gui
+
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / gui.ARRESTS_NAME).write_bytes(b"beside the app")
+    monkeypatch.setattr(gui, "PROJECT_DIR", app_dir)
+    monkeypatch.setenv("ICE_PATHWAY_DATA", str(tmp_path / "user"))
+    monkeypatch.setattr(gui.os, "access", lambda path, mode: False)
+
+    assert gui.dataset_path(gui.ARRESTS_NAME) == app_dir / gui.ARRESTS_NAME
+
+    data_dir = tmp_path / "user" / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / gui.ARRESTS_NAME).write_bytes(b"downloaded")
+
+    assert gui.dataset_path(gui.ARRESTS_NAME) == data_dir / gui.ARRESTS_NAME

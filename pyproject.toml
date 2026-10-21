@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ice-detention-pathway"
-version = "2.1.4"
+version = "2.1.5"
 description = "Reconstruct recorded ICE detention pathways from Deportation Data Project identifiers."
 readme = "README.md"
 requires-python = ">=3.11"

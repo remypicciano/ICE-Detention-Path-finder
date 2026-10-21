@@ -123,6 +123,12 @@ in a fresh copy without any setup. To point the app at a different mirror, put
 your own `data-sources.json` beside the app: the copy beside the app wins over
 the bundled one.
 
+The datasets are downloaded into the folder beside the app when that folder can
+be written to, and into `~/.ice_pathway/data` when it cannot. macOS runs an app
+opened straight from a download from a read-only place, and a download written
+there fails with *read-only file system*. Files already beside the app keep
+being read either way.
+
 ### 3. Run
 
 Desktop application:

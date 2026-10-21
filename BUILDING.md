@@ -34,6 +34,18 @@ mistake fails the build rather than the first download:
 dist/ICEDetentionPathway.app/Contents/MacOS/ICEDetentionPathway --self-test
 ```
 
+## Where the datasets are kept
+
+The app reads and writes the Parquet files in the folder beside it, and in
+`~/.ice_pathway/data` when that folder cannot be written to. A released copy
+does not always sit somewhere the user can write: macOS runs an app opened
+straight from a download from a read-only translocation, and writing a
+download there fails with *read-only file system*.
+
+Files already beside the app keep being read in either case. Set
+`ICE_PATHWAY_DATA` to choose the folder yourself; it holds the download
+history as well as the datasets.
+
 ## The application icon
 
 The window, the Dock and the taskbar icon are drawn by the project, not
@@ -86,12 +98,12 @@ Check the Mac processor in Terminal:
 uname -m
 ```
 
-- `arm64`: download `ICEDetentionPathway-v2.1.4-macOS-ARM64` (Apple Silicon).
-- `x86_64`: download `ICEDetentionPathway-v2.1.4-macOS-X64` (Intel).
+- `arm64`: download `ICEDetentionPathway-v2.1.5-macOS-ARM64` (Apple Silicon).
+- `x86_64`: download `ICEDetentionPathway-v2.1.5-macOS-X64` (Intel).
 
 GitHub downloads an outer artifact ZIP containing a second, macOS-preserving
 ZIP. Extract the outer ZIP, then extract the inner
-`ICEDetentionPathway-v2.1.4-macOS-*.zip` before opening the `.app`. The inner ZIP is
+`ICEDetentionPathway-v2.1.5-macOS-*.zip` before opening the `.app`. The inner ZIP is
 important because it preserves the app bundle and executable permissions.
 
 The inner archive holds the app and `data-sources.json` at its root. Leave them
@@ -196,15 +208,15 @@ uname -m
 
 Download the matching Actions artifact:
 
-- `x86_64`: `ICEDetentionPathway-v2.1.4-Linux-x86_64`
-- `aarch64` or `arm64`: `ICEDetentionPathway-v2.1.4-Linux-aarch64`
+- `x86_64`: `ICEDetentionPathway-v2.1.5-Linux-x86_64`
+- `aarch64` or `arm64`: `ICEDetentionPathway-v2.1.5-Linux-aarch64`
 
 Move the downloaded archive and the required Parquet files into **Linux files**.
 The archive holds the executable and `data-sources.json`; keep them together.
 Then extract and run it:
 
 ```bash
-tar -xzf ICEDetentionPathway-v2.1.4-Linux-*.tar.gz
+tar -xzf ICEDetentionPathway-v2.1.5-Linux-*.tar.gz
 chmod +x ICEDetentionPathway
 ./ICEDetentionPathway
 ```
