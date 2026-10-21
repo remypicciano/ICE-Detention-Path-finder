@@ -10,7 +10,9 @@ This is the dataset half of the project's network use — the other is
 person explicitly asks for them. Lookups never make network requests.
 
 Source URLs live in `data-sources.json` beside the application so they can be
-corrected without rebuilding. See `data-sources.example.json`.
+corrected without rebuilding. The same file is shipped inside the application
+and released next to it, so a copy that has been moved or deleted still finds
+its URLs. See `data-sources.example.json`.
 """
 
 from __future__ import annotations
@@ -116,15 +118,41 @@ def config_path(project_dir: Path) -> Path:
     return project_dir / CONFIG_FILENAME
 
 
+def bundled_config_path() -> Path | None:
+    """Locate the copy of the config that ships with the application.
+
+    A packaged build has no source tree next to it, so the URLs have to travel
+    inside the bundle for the download feature to work at all. Returns None
+    when no copy is available rather than raising: the caller decides what a
+    missing config means.
+    """
+    candidates: list[Path] = []
+    frozen_bundle = getattr(sys, "_MEIPASS", None)
+    if frozen_bundle:
+        candidates.append(Path(frozen_bundle) / CONFIG_FILENAME)
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent / CONFIG_FILENAME)
+    candidates.append(Path(__file__).resolve().parent / CONFIG_FILENAME)
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
 def load_sources(project_dir: Path) -> dict[str, str]:
-    """Read the filename-to-URL mapping, rejecting anything unusable."""
+    """Read the filename-to-URL mapping, rejecting anything unusable.
+
+    A config beside the application wins, so a wrong URL can be corrected
+    without rebuilding; otherwise the copy shipped with the application is
+    used.
+    """
     path = config_path(project_dir)
     if not path.is_file():
-        raise DownloadError(
-            f"No {CONFIG_FILENAME} found in {project_dir}. Copy "
-            f"{EXAMPLE_CONFIG_FILENAME} to {CONFIG_FILENAME} and put the "
-            "current download URLs in it."
-        )
+        shipped = bundled_config_path()
+        if shipped is None:
+            raise DownloadError(
+                f"No {CONFIG_FILENAME} found in {project_dir}, and this build "
+                f"ships no copy of its own. Copy {EXAMPLE_CONFIG_FILENAME} to "
+                f"{CONFIG_FILENAME} and put the current download URLs in it."
+            )
+        path = shipped
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:

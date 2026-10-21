@@ -61,6 +61,14 @@ jobs:
       - name: Build application
         run: python -m PyInstaller --noconfirm --clean ICEDetentionPathway.spec
 
+      - name: Verify the application icon
+        if: runner.os == 'macOS'
+        run: python tools/verify_bundle_icon.py dist/ICEDetentionPathway.app
+
+      - name: Verify the application icon
+        if: runner.os == 'Windows'
+        run: python tools/verify_bundle_icon.py dist/ICEDetentionPathway.exe
+
       - name: Test bundled macOS application
         if: runner.os == 'macOS'
         run: dist/ICEDetentionPathway.app/Contents/MacOS/ICEDetentionPathway --self-test
@@ -98,23 +106,28 @@ jobs:
       - name: Package macOS artifact
         if: runner.os == 'macOS'
         run: |
+          cp data-sources.json dist/data-sources.json
           ditto -c -k --sequesterRsrc --keepParent \
             dist/ICEDetentionPathway.app \
+            dist/data-sources.json \
             dist/ICEDetentionPathway-v${{ env.APP_VERSION }}-macOS-${{ runner.arch }}.zip
 
       - name: Package Windows artifact
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path "dist\ICEDetentionPathway.exe" `
+          Copy-Item "data-sources.json" "dist\data-sources.json"
+          Compress-Archive -Path "dist\ICEDetentionPathway.exe", "dist\data-sources.json" `
             -DestinationPath "dist\ICEDetentionPathway-v${{ env.APP_VERSION }}-Windows.zip"
 
       - name: Package Linux artifact
         if: runner.os == 'Linux'
         run: |
           architecture="$(uname -m)"
+          cp data-sources.json dist/data-sources.json
           tar -C dist -czf "ICEDetentionPathway-v${{ env.APP_VERSION }}-Linux-${architecture}.tar.gz" \
-            ICEDetentionPathway
+            ICEDetentionPathway \
+            data-sources.json
 
       - name: Upload macOS artifact
         if: runner.os == 'macOS'

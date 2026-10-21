@@ -70,9 +70,36 @@ def write_config(project_dir: Path, sources: dict[str, str]) -> None:
     )
 
 
-def test_load_sources_requires_a_config(tmp_path) -> None:
+def test_load_sources_requires_a_config(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(fetch_data, "bundled_config_path", lambda: None)
+
     with pytest.raises(DownloadError, match="data-sources.json"):
         load_sources(tmp_path)
+
+
+def test_load_sources_falls_back_to_the_shipped_config(tmp_path, monkeypatch) -> None:
+    """A packaged app has no config beside it, so the shipped one is used."""
+    shipped = tmp_path / "shipped.json"
+    shipped.write_text(
+        json.dumps({"sources": {"a.parquet": "https://example.test/a.parquet"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(fetch_data, "bundled_config_path", lambda: shipped)
+
+    assert load_sources(tmp_path) == {"a.parquet": "https://example.test/a.parquet"}
+
+
+def test_load_sources_prefers_the_config_beside_the_app(tmp_path, monkeypatch) -> None:
+    """A local copy wins, so a wrong URL can be corrected without a rebuild."""
+    shipped = tmp_path / "shipped.json"
+    shipped.write_text(
+        json.dumps({"sources": {"a.parquet": "https://example.test/shipped.parquet"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(fetch_data, "bundled_config_path", lambda: shipped)
+    write_config(tmp_path, {"a.parquet": "https://example.test/local.parquet"})
+
+    assert load_sources(tmp_path) == {"a.parquet": "https://example.test/local.parquet"}
 
 
 def test_load_sources_rejects_plain_http(tmp_path) -> None:

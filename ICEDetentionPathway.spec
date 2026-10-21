@@ -8,7 +8,12 @@ a = Analysis(
     pathex=[],
     binaries=[],
     # The window icon at runtime; the same art becomes app.ico / app.icns.
-    datas=[("assets/ice_cube.png", "assets")],
+    # The dataset URLs travel inside the bundle too, so a released app can
+    # find them even when it has been moved away from its source tree.
+    datas=[
+        ("assets/ice_cube.png", "assets"),
+        ("data-sources.json", "."),
+    ],
     hiddenimports=["pytz", "uuid"],
     hookspath=[],
     hooksconfig={},
@@ -52,8 +57,8 @@ if sys.platform == "darwin":
         icon="assets/app.icns",
         info_plist={
             "CFBundleDisplayName": "ICE Detention Pathway",
-            "CFBundleShortVersionString": "2.1.3",
-            "CFBundleVersion": "2.1.3",
+            "CFBundleShortVersionString": "2.1.4",
+            "CFBundleVersion": "2.1.4",
             "NSHighResolutionCapable": True,
         },
     )
