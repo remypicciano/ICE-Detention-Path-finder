@@ -16,11 +16,11 @@ VSVersionInfo(
         [
           StringStruct("CompanyName", "Rémy Picciano"),
           StringStruct("FileDescription", "Reconstruct recorded ICE detention pathways"),
-          StringStruct("FileVersion", "2.1.3"),
+          StringStruct("FileVersion", "2.1.4"),
           StringStruct("InternalName", "ICEDetentionPathway"),
           StringStruct("OriginalFilename", "ICEDetentionPathway.exe"),
           StringStruct("ProductName", "ICE Detention Pathway"),
-          StringStruct("ProductVersion", "2.1.3")
+          StringStruct("ProductVersion", "2.1.4")
         ]
       )
     ]),
