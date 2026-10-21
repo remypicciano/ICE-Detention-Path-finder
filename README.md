@@ -71,6 +71,11 @@ python ice_detention_pathway_gui.py --demo
 
 <img src="assets/app-screenshot.png" alt="ICE Detention Pathway desktop app showing a fabricated two-stay pathway" width="720">
 
+The version stands next to the title in the header, so you can tell at a glance
+whether the copy in front of you is the one you read about. The window is sized
+to its content: every button is inside it, and the result pane scrolls instead
+of stretching the frame.
+
 ## Quick start
 
 ### 1. Install
@@ -111,6 +116,12 @@ Use the complete national files. Locally reduced copies silently remove people
 and stays, and no search result can reveal that something is missing. The
 datasets are excluded from Git and from application bundles; keep the filenames
 exactly as shown.
+
+The download URLs live in `data-sources.json`. It is tracked here, shipped
+inside the application and released next to it, so the download feature works
+in a fresh copy without any setup. To point the app at a different mirror, put
+your own `data-sources.json` beside the app: the copy beside the app wins over
+the bundled one.
 
 ### 3. Run
 
@@ -366,6 +377,9 @@ q.py                           Ad-hoc SQL against the local Parquet files
 parquet_viewer.py              Bounded Parquet schema/row inspector
 data-sources.json              Dataset download URLs (shipped with the app)
 data-sources.example.json      Template for a customised copy
+tools/make_icons.py            Draws the app icon in every size the OS asks for
+tools/verify_bundle_icon.py    Checks that a built app carries a readable icon
+assets/                        App icon, Windows icon, and the screenshot
 docs/                          Architecture and output-format documentation
 AUDIT.md                       Known bugs and data issues, severity-ranked
 test_*.py                      Automated tests

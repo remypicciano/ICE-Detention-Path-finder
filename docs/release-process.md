@@ -58,11 +58,20 @@ The `Build desktop applications` workflow then:
 1. Runs the test suite on every supported OS (see `build-desktop.yml`).
 2. Builds native executables for macOS (Apple Silicon + Intel), Windows, and
    Linux (x86_64 + aarch64).
-3. Creates the GitHub Release `v3.2.0` and uploads all artifacts to it.
+3. Checks the icon of the built app or executable, so a build that cannot read
+   its own icon fails instead of shipping a placeholder.
+4. Creates the GitHub Release `v3.2.0` and uploads all artifacts to it.
+
+Every archive holds the application and `data-sources.json` at its root: the app
+looks for the dataset URLs beside itself and falls back to the copy inside
+itself. The macOS archive is staged in one folder before it is zipped, because
+`ditto` archives a single source.
 
 Watch the workflow run on the
 [Actions tab](https://github.com/remypicciano/ICE-Detention-Path-finder/actions)
-and confirm the release appears with all five artifacts.
+and confirm the release appears with all five artifacts. The generated notes
+list the commits; replace them with a short account of what changed for the
+reader, and name the download for each platform.
 
 ## When the publisher changes the data schema
 

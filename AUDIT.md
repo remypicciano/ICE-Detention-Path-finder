@@ -513,6 +513,36 @@ Same concept, two names, one repo.
 Written for this investigation. Either document it in the README or delete it;
 right now it is untracked and unexplained.
 
+### D4 — The window was pinned before it was measured · P2 · FIXED in 2.1.4
+
+`_freeze_window_size` read the widgets' requested sizes before Tk had laid
+them out, so it measured nothing and froze the window at its minimum size. The
+toolbar needed more width than that, so **Check for Updates… was pushed out of
+sight** and the title label was squeezed to one pixel — the window had no
+visible version. Fixed by measuring after the layout, giving the buttons a row
+of their own, and capping the height to the screen. Regression test:
+`test_window_shows_the_version_and_every_button`.
+
+### D5 — The hints were unreadable in dark mode · P3 · FIXED in 2.1.4
+
+The hint labels were given a fixed grey (`#555555`), which is legible on the
+light window background and almost invisible on the dark one that macOS uses
+in dark mode. They now use the colour of the theme, so they are readable
+whatever the appearance is.
+
+### D6 — The released app could not find its dataset URLs · P1 · FIXED in 2.1.4
+
+`data-sources.json` was ignored by git, was not bundled, and was not released
+next to the app, so a fresh copy had no URLs and the download feature could
+not say where the current datasets were. The file is now tracked, bundled and
+released, and the self-test fails a build that does not carry it.
+
+### D7 — The macOS archive could not be built · P1 · FIXED in 2.1.4
+
+`ditto` archives a single source, so passing the app and `data-sources.json`
+together failed the packaging step and no macOS artifact was published. The
+two are staged in one folder and archived from there.
+
 ---
 
 ## Reproducing the counts

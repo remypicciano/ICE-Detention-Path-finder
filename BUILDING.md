@@ -15,6 +15,46 @@ For normal lookup, place these files beside the `.app` or `.exe`:
 Use the complete national files. A locally reduced copy silently removes people
 and stays, and a search result cannot reveal that anything is missing.
 
+## The dataset URLs beside the application
+
+`data-sources.json` holds the download URLs of the current datasets. It is
+tracked in the repository, bundled inside the application, and released next to
+it, so a fresh copy finds its URLs without any setup. A copy beside the app
+takes precedence over the bundled one, so a wrong URL can be corrected without
+rebuilding:
+
+```bash
+cp data-sources.example.json data-sources.json   # start from the template
+```
+
+The bundled self-test checks that the URLs can be found, so a packaging
+mistake fails the build rather than the first download:
+
+```bash
+dist/ICEDetentionPathway.app/Contents/MacOS/ICEDetentionPathway --self-test
+```
+
+## The application icon
+
+The window, the Dock and the taskbar icon are drawn by the project, not
+imported from a picture service. `tools/make_icons.py` draws the artwork once
+and writes every size macOS and Windows ask for:
+
+```bash
+python tools/make_icons.py            # rewrites assets/ice_cube.png, app.icns, app.ico
+```
+
+The files carry no metadata about where they came from. `tools/verify_bundle_icon.py`
+checks a built application instead of assuming the icon survived the build: the
+`.icns` has to hold every size macOS asks for, the bundle has to declare an
+icon file it can read, and the artwork in the `.icns` has to be the artwork the
+window uses. macOS answers an application whose icon it cannot read with a
+placeholder of its own, so this check runs in the build:
+
+```bash
+python tools/verify_bundle_icon.py dist/ICEDetentionPathway.app
+```
+
 ## Local macOS build
 
 Install Python 3.14 and Tk support, then create the environment:
@@ -53,6 +93,10 @@ GitHub downloads an outer artifact ZIP containing a second, macOS-preserving
 ZIP. Extract the outer ZIP, then extract the inner
 `ICEDetentionPathway-v2.1.4-macOS-*.zip` before opening the `.app`. The inner ZIP is
 important because it preserves the app bundle and executable permissions.
+
+The inner archive holds the app and `data-sources.json` at its root. Leave them
+together: the app finds the dataset URLs beside itself, and falls back to the
+copy inside itself if the file is moved away.
 
 On first launch, Control-click the extracted app and choose **Open**. If macOS
 still blocks it, open **System Settings → Privacy & Security**, find the blocked
@@ -104,8 +148,10 @@ identifier, timeline, and clipboard checks.
 ### What to expect on Windows
 
 1. Extract the downloaded ZIP. Do not run the application from inside the ZIP.
-2. Put `ICEDetentionPathway.exe` and the four exactly named Parquet files in one
-   writable folder, such as `Documents\ICEDetentionPathway`.
+2. Put `ICEDetentionPathway.exe`, `data-sources.json`, and the four exactly
+   named Parquet files in one writable folder, such as
+   `Documents\ICEDetentionPathway`. The archive already contains
+   `data-sources.json`.
 3. Double-click `ICEDetentionPathway.exe`.
 4. Because the app is not code-signed, Microsoft Defender SmartScreen may show
    **Windows protected your PC**. Select **More info**, verify the app name, then
@@ -154,6 +200,7 @@ Download the matching Actions artifact:
 - `aarch64` or `arm64`: `ICEDetentionPathway-v2.1.4-Linux-aarch64`
 
 Move the downloaded archive and the required Parquet files into **Linux files**.
+The archive holds the executable and `data-sources.json`; keep them together.
 Then extract and run it:
 
 ```bash
