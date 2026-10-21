@@ -1284,3 +1284,49 @@ def test_export_pathway_json_writes_parseable_pretty_json(tmp_path) -> None:
     import json as _json
 
     assert _json.loads(raw) == pathway_to_dict(pathway)
+
+
+def test_window_shows_the_version_and_every_button() -> None:
+    """The header names the version and no button is pushed out of the window.
+
+    The window is sized from the widgets it holds, so a button that does not
+    fit has to fail here rather than disappear in front of a reader.
+    """
+    pytest.importorskip("tkinter")
+    import tkinter as tk
+
+    from ice_detention_pathway import APP_VERSION
+    from ice_detention_pathway_gui import LookupWindow
+
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("no display available for the window")
+    try:
+        LookupWindow(root)
+        root.update_idletasks()
+
+        texts: list[str] = []
+        buttons: list[tuple[str, int]] = []
+
+        def walk(widget: tk.Misc) -> None:
+            for child in widget.winfo_children():
+                if child.winfo_class() in ("TLabel", "TButton"):
+                    texts.append(str(child.cget("text")))
+                if child.winfo_class() == "TButton":
+                    buttons.append(
+                        (
+                            str(child.cget("text")),
+                            child.winfo_x() + child.winfo_reqwidth(),
+                        )
+                    )
+                walk(child)
+
+        walk(root)
+        assert f"v{APP_VERSION}" in texts, "the version is missing from the window"
+        assert root.title().endswith(f"v{APP_VERSION}")
+        width = root.winfo_width()
+        for label, right_edge in buttons:
+            assert right_edge <= width, f"the {label} button is outside the window"
+    finally:
+        root.destroy()

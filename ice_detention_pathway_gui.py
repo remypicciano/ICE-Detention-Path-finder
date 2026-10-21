@@ -229,11 +229,22 @@ class LookupWindow:
         toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         toolbar.columnconfigure(0, weight=1)
 
+        # The header carries the version, not only the window title: someone
+        # who has just read about a new release must be able to see at a
+        # glance whether the copy in front of them is that release.
+        header = ttk.Frame(toolbar)
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
+        title_row = ttk.Frame(header)
+        title_row.grid(row=0, column=0, sticky="w")
+        ttk.Label(title_row, text=APP_NAME, font=("TkDefaultFont", 15)).grid(
+            row=0, column=0, sticky="w"
+        )
         ttk.Label(
-            toolbar,
-            text=f"{APP_NAME} v{APP_VERSION}",
-            font=("TkDefaultFont", 15),
-        ).grid(row=0, column=0, sticky="w")
+            title_row,
+            text=f"v{APP_VERSION}",
+            font=("TkDefaultFont", 15, "bold"),
+        ).grid(row=0, column=1, sticky="w", padx=(10, 0))
 
         self.releases = detect_releases()
         default_label = next(
@@ -258,27 +269,32 @@ class LookupWindow:
         self.release_selector.grid(row=0, column=1, padx=(6, 0))
         self.release_selector.bind("<<ComboboxSelected>>", self.change_release)
 
+        # The buttons get a row of their own: side by side with the release
+        # picker they need more width than the window has, and the last one
+        # was pushed out of sight.
+        actions = ttk.Frame(toolbar)
+        actions.grid(row=1, column=0, columnspan=2, sticky="w", pady=(10, 0))
         self.download_button = ttk.Button(
-            toolbar,
+            actions,
             text="Download / Update Data…",
             command=self.confirm_download,
         )
-        self.download_button.grid(row=0, column=2, padx=(8, 0))
+        self.download_button.pack(side=tk.LEFT)
         self.bulk_button = ttk.Button(
-            toolbar,
+            actions,
             text="Bulk Search…",
             command=self.show_bulk,
         )
-        self.bulk_button.grid(row=0, column=3, padx=(8, 0))
-        ttk.Button(toolbar, text="? Help", command=self.show_help).grid(
-            row=0, column=4, padx=(8, 0)
+        self.bulk_button.pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(actions, text="? Help", command=self.show_help).pack(
+            side=tk.LEFT, padx=(8, 0)
         )
         self.check_update_button = ttk.Button(
-            toolbar,
+            actions,
             text="Check for Updates…",
             command=self.start_update_check,
         )
-        self.check_update_button.grid(row=0, column=5, padx=(8, 0))
+        self.check_update_button.pack(side=tk.LEFT, padx=(8, 0))
 
         ttk.Label(
             container,
@@ -312,7 +328,6 @@ class LookupWindow:
         ttk.Label(
             container,
             text="Paste an identifier, then select Search or press Return.",
-            foreground="#555555",
         ).grid(row=4, column=0, sticky="w", pady=(0, 12))
 
         manual_header = ttk.Frame(container)
@@ -335,7 +350,6 @@ class LookupWindow:
                 "Shown in place of the recorded arrest location, marked "
                 f"{MANUAL_EDIT_MARK} original=…]. Source data is not changed."
             ),
-            foreground="#555555",
         ).grid(row=7, column=0, sticky="w", pady=(0, 12))
 
         ttk.Label(container, text="Detention timeline (editable)").grid(
@@ -387,7 +401,6 @@ class LookupWindow:
         ttk.Label(
             recent,
             text="Double-click a row to open that lookup.",
-            foreground="#555555",
         ).grid(row=2, column=0, sticky="w", pady=(4, 0))
 
         footer = ttk.Frame(container)
@@ -437,14 +450,19 @@ class LookupWindow:
     def _freeze_window_size(self) -> None:
         """Pin the window to its laid-out size so content can never resize it.
 
-        Measured from the widgets' requested sizes, taking the larger of the
-        minimum and the request so nothing is clipped. `minsize == maxsize`
-        then holds the frame at that size: a long status line, a big result,
-        or a release switch is clipped or scrolled, never allowed to stretch
-        the window.
+        The size is measured after the widgets have been placed, because Tk
+        only reports what they need once it has laid them out. Taking the
+        larger of the minimum and the request keeps every button and label
+        inside the window instead of pushing the last ones out of sight, and
+        the height is capped to the screen, where the result pane gives way
+        first.
         """
+        self.root.update_idletasks()
         width = max(self.root.winfo_reqwidth(), 720)
-        height = max(self.root.winfo_reqheight(), 570)
+        height = min(
+            max(self.root.winfo_reqheight(), 570),
+            self.root.winfo_screenheight() - 80,
+        )
         self.root.geometry(f"{width}x{height}")
         self.root.minsize(width, height)
         self.root.maxsize(width, height)
@@ -622,7 +640,6 @@ class LookupWindow:
                 "not override it; a stay box applies to that stay only."
             ),
             wraplength=560,
-            foreground="#555555",
             justify=tk.LEFT,
         ).pack(fill=tk.X, pady=(0, 10))
 
