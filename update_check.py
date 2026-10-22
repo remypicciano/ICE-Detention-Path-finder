@@ -6,7 +6,7 @@ explicitly asks — the desktop app's Check for Updates… button or the termina
 metadata. Nothing is downloaded or replaced here; the release page URL is
 returned so the caller can offer it for the person to open themselves.
 
-The published tag (`v2.1.5`) is compared numerically against the running
+The published tag (`v2.1.6`) is compared numerically against the running
 version, and the asset whose name matches this machine is identified with the
 naming convention `ICEDetentionPathway-v<version>-<os>-<arch>.<ext>` produced by
 .github/workflows/build-desktop.yml. When no asset matches, the release page

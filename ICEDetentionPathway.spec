@@ -57,8 +57,8 @@ if sys.platform == "darwin":
         icon="assets/app.icns",
         info_plist={
             "CFBundleDisplayName": "ICE Detention Pathway",
-            "CFBundleShortVersionString": "2.1.5",
-            "CFBundleVersion": "2.1.5",
+            "CFBundleShortVersionString": "2.1.6",
+            "CFBundleVersion": "2.1.6",
             "NSHighResolutionCapable": True,
         },
     )

@@ -1332,6 +1332,35 @@ def test_window_shows_the_version_and_every_button() -> None:
         root.destroy()
 
 
+def test_a_fresh_copy_says_how_to_get_the_data(monkeypatch, tmp_path) -> None:
+    """A brand-new copy has no datasets, and the window says so.
+
+    Without this the first search on a new machine fails with a file not
+    found, and nothing on screen points at the button that fetches the data.
+    """
+    pytest.importorskip("tkinter")
+    import tkinter as tk
+
+    import ice_detention_pathway_gui as gui
+
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    monkeypatch.setattr(gui, "PROJECT_DIR", app_dir)
+    monkeypatch.setattr(gui, "detect_releases", dict)
+
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("no display available for the window")
+    try:
+        window = gui.LookupWindow(root)
+        root.update_idletasks()
+        status = window.status.cget("text")
+        assert "Download / Update Data" in status, status
+    finally:
+        root.destroy()
+
+
 def test_data_folder_is_the_users_own_when_the_app_folder_cannot_be_written(
     monkeypatch, tmp_path
 ) -> None:

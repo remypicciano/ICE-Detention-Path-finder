@@ -159,6 +159,9 @@ python ice_detention_pathway.py --check-update
 
 ## Desktop workflow
 
+On a fresh copy the window says there are no datasets yet: press
+**Download / Update Data…** first, then search.
+
 1. Paste a `unique_identifier`, `stay_ID`, or `stint_ID`.
 2. Optionally enter a more precise arrest location. This changes only the
    displayed result.

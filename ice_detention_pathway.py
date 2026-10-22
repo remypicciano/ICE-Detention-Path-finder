@@ -35,7 +35,7 @@ DEFAULT_FACILITIES_FILE = Path("facilities-latest.parquet")
 # `version_info.txt`, and the PyInstaller spec mirror it per
 # docs/release-process.md, and `update_check` compares it against the latest
 # GitHub release tag.
-APP_VERSION = "2.1.5"
+APP_VERSION = "2.1.6"
 
 # An arrest is treated as opening a stay that begins at or after it. Book-in
 # times occasionally precede the arrest by a little; this tolerance absorbs that
@@ -414,7 +414,11 @@ def duration_text(start: datetime | None, end: datetime | None) -> str:
 
 def validate_file(path: Path, label: str) -> None:
     if not path.is_file():
-        raise LookupError(f"The {label} Parquet file was not found: {path} -- make sure it's in the same folder as this program!")
+        raise LookupError(
+            f"The {label} Parquet file was not found: {path} -- fetch the datasets "
+            "with the Download / Update Data… button in the app, or put the file "
+            "in that folder."
+        )
 
 
 def available_columns(connection: duckdb.DuckDBPyConnection, path: Path) -> set[str]:

@@ -555,6 +555,15 @@ folder beside it when that folder can be written to, and to
 Regression tests: `test_data_folder_is_the_users_own_when_the_app_folder_cannot_be_written`,
 `test_dataset_files_come_from_the_data_folder_when_it_has_them`.
 
+### D9 — A brand-new copy gave no way forward · P2 · FIXED in 2.1.6
+
+A fresh download has no datasets, and the first search failed with "the
+arrests Parquet file was not found … make sure it's in the same folder as this
+program". Nothing on screen said that the Download / Update Data… button was
+the way to get the files, and the advice about the folder was wrong for the
+copy macOS puts in a read-only place. The window now says there are no
+datasets yet and names the button, and the error names the button too.
+
 ---
 
 ## Reproducing the counts

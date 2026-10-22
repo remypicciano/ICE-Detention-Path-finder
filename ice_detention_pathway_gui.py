@@ -467,6 +467,12 @@ class LookupWindow:
 
         self.status = ttk.Label(footer, text="Paste an identifier and select Search.")
         self.status.grid(row=0, column=0, sticky="w")
+        if not self.releases:
+            # A fresh copy has no datasets yet, and searching without them
+            # only produces an error. Say what to do instead of waiting for it.
+            self.status.configure(
+                text="No datasets yet — use Download / Update Data… to fetch them."
+            )
 
         self.copy_button = ttk.Button(
             footer,
@@ -1132,8 +1138,10 @@ An arrest with no detention record is reported the same way, under
 
 REQUIRED FILES
 
-Place the downloaded Parquet files in the same directory as this script,
-Windows .exe, or macOS .app and use these exact filenames:
+The app reads the downloaded Parquet files from the folder beside this script,
+Windows .exe, or macOS .app, and from ~/.ice_pathway/data when that folder
+cannot be written to — which is where macOS puts an app opened straight from a
+download. Use these exact filenames:
 
   arrests-latest.parquet
   detention-stints-latest.parquet

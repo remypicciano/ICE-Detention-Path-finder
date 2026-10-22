@@ -98,12 +98,12 @@ Check the Mac processor in Terminal:
 uname -m
 ```
 
-- `arm64`: download `ICEDetentionPathway-v2.1.5-macOS-ARM64` (Apple Silicon).
-- `x86_64`: download `ICEDetentionPathway-v2.1.5-macOS-X64` (Intel).
+- `arm64`: download `ICEDetentionPathway-v2.1.6-macOS-ARM64` (Apple Silicon).
+- `x86_64`: download `ICEDetentionPathway-v2.1.6-macOS-X64` (Intel).
 
 GitHub downloads an outer artifact ZIP containing a second, macOS-preserving
 ZIP. Extract the outer ZIP, then extract the inner
-`ICEDetentionPathway-v2.1.5-macOS-*.zip` before opening the `.app`. The inner ZIP is
+`ICEDetentionPathway-v2.1.6-macOS-*.zip` before opening the `.app`. The inner ZIP is
 important because it preserves the app bundle and executable permissions.
 
 The inner archive holds the app and `data-sources.json` at its root. Leave them
@@ -208,15 +208,15 @@ uname -m
 
 Download the matching Actions artifact:
 
-- `x86_64`: `ICEDetentionPathway-v2.1.5-Linux-x86_64`
-- `aarch64` or `arm64`: `ICEDetentionPathway-v2.1.5-Linux-aarch64`
+- `x86_64`: `ICEDetentionPathway-v2.1.6-Linux-x86_64`
+- `aarch64` or `arm64`: `ICEDetentionPathway-v2.1.6-Linux-aarch64`
 
 Move the downloaded archive and the required Parquet files into **Linux files**.
 The archive holds the executable and `data-sources.json`; keep them together.
 Then extract and run it:
 
 ```bash
-tar -xzf ICEDetentionPathway-v2.1.5-Linux-*.tar.gz
+tar -xzf ICEDetentionPathway-v2.1.6-Linux-*.tar.gz
 chmod +x ICEDetentionPathway
 ./ICEDetentionPathway
 ```
