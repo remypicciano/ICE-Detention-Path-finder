@@ -333,6 +333,7 @@ def main() -> None:
         help="refresh a present file older than this many days (default: 7)",
     )
     args = parser.parse_args()
+    args.out.mkdir(parents=True, exist_ok=True)
 
     if not args.no_download:
         try:
@@ -340,6 +341,7 @@ def main() -> None:
                 datasets.data_root(),
                 refresh=args.refresh_data,
                 max_age_days=args.data_max_age_days,
+                out_dir=args.out,
             )
         except DownloadError as exc:
             raise SystemExit(f"Dataset refresh failed: {exc}") from exc
@@ -350,7 +352,6 @@ def main() -> None:
     if not releases:
         raise SystemExit("No complete dataset release found.")
 
-    args.out.mkdir(parents=True, exist_ok=True)
     built_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     info = []
     for release in releases:
