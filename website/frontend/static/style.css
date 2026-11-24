@@ -13,8 +13,8 @@
 }
 
 * { box-sizing: border-box; }
-html { font-family: var(--sans); color: var(--ink); background: var(--bone); font-size: 14px; }
-body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
+html { font-family: var(--sans); font-size: 14px; }
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: var(--bone); color: var(--ink); }
 a { color: inherit; text-decoration: none; }
 a:hover { color: var(--vermilion); }
 code, pre, textarea { font-family: var(--mono); }
@@ -134,13 +134,24 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .footer { padding: 16px clamp(16px, 3vw, 40px) 24px; border-top: 1px solid var(--rule); background: var(--bone); color: var(--graphite); font-size: 11px; line-height: 1.6; }
 .footer p { max-width: 100ch; margin: 4px 0; text-wrap: pretty; }
 
-/* Staging single-panel lookup and dataset runbook. Production uses workbench. */
+/* Staging style studies. Production keeps the workbench above. */
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .single-panel, .dataset-ops { max-width: 84ch; margin: 0 auto; }
+.staging-layout { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "notice" "form" "dataset" "output" "actions"; }
+.staging-layout .panel-head { grid-area: head; }
+.staging-layout .notice-slot { grid-area: notice; }
+.staging-layout .intake { display: contents; }
+.staging-layout .lookup-form { grid-area: form; }
+.staging-layout .dataset-picker { grid-area: dataset; }
+.staging-layout .output-block { grid-area: output; }
+.staging-layout .lookup-actions { grid-area: actions; }
 .panel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; max-width: 84ch; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--rule); }
 .panel-title { min-width: 0; }
 .panel-head h1 { font-size: 25px; }
 .panel-head .lede { margin-top: 8px; }
+.intake-label { display: none; }
+.style-switch { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--graphite); font-size: 11px; white-space: nowrap; }
+.style-switch select { width: auto; padding: 4px 6px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); font-size: 11px; }
 
 .lookup-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
 .lookup-form #identifier { padding: 12px 14px; font-size: 15px; }
@@ -157,6 +168,72 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .output-block textarea { display: block; width: 100%; min-height: 46vh; padding: 14px; border: 1px solid var(--rule); background: var(--paper); }
 .lookup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .lookup-actions a { display: inline-flex; align-items: center; padding: 8px 2px; color: var(--vermilion); font-size: 12px; border-bottom: 1px solid currentColor; }
+
+/* Console: command line, terse system labels, terminal reading surface. */
+body[data-style="console"] {
+  --bone: #0b1014;
+  --paper: #121a20;
+  --ink: #d8e6df;
+  --graphite: #9ab3aa;
+  --rule: #2b3b41;
+  --vermilion: #68e0ad;
+  --vermilion-deep: #34d399;
+  --sans: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+body[data-style="console"] ::selection { background: #1e4b3c; color: #eafff6; }
+body[data-style="console"] :focus-visible { outline-color: #68e0ad; }
+body[data-style="console"] input::placeholder,
+body[data-style="console"] textarea::placeholder { color: #9ab3aa; }
+body[data-style="console"] .single-panel { max-width: 96ch; }
+body[data-style="console"] .panel-head { padding-bottom: 18px; border-bottom: 1px solid var(--rule); }
+body[data-style="console"] .panel-head h1 { font-family: var(--mono); font-size: 22px; text-transform: uppercase; letter-spacing: .02em; }
+body[data-style="console"] .panel-title .lede { font-family: var(--mono); font-size: 12px; }
+body[data-style="console"] .style-switch select { background: #0e1519; }
+body[data-style="console"] .lookup-form { position: relative; gap: 10px; }
+body[data-style="console"] .lookup-form #identifier { padding: 13px 14px 13px 34px; border-color: var(--rule); background: #0e1519; color: #eafff6; }
+body[data-style="console"] .lookup-form::before { content: "›"; position: absolute; left: 13px; top: 13px; color: var(--vermilion); font: 700 16px/1 var(--mono); }
+body[data-style="console"] .lookup-form .primary { padding: 13px 18px; background: var(--vermilion); border-color: var(--vermilion); color: #07130e; text-transform: uppercase; letter-spacing: .1em; }
+body[data-style="console"] .dataset-picker { margin: 12px 0 20px; font-family: var(--mono); }
+body[data-style="console"] .dataset-picker summary::before { content: "// "; color: var(--vermilion); }
+body[data-style="console"] .output-head { padding: 10px 12px; background: #0b1014; border: 1px solid var(--rule); }
+body[data-style="console"] .output-head h2 { color: var(--vermilion); font-family: var(--mono); }
+body[data-style="console"] .output-head h2::before { content: "$ "; }
+body[data-style="console"] .output-block .status { margin: 0; padding: 11px 14px; border: 1px solid var(--rule); border-left: 1px solid var(--vermilion); background: #0e1519; color: #b9d4c9; font-family: var(--mono); }
+body[data-style="console"] .output-block .status::before { content: "> "; color: var(--vermilion); }
+body[data-style="console"] .output-block textarea { padding: 16px; border: 1px solid var(--rule); background: #0e1519; color: #d8e6df; font-family: var(--mono); font-size: 12px; line-height: 1.7; }
+body[data-style="console"] button, body[data-style="console"] .secondary { border-color: var(--rule); background: #121a20; color: #d8e6df; font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+body[data-style="console"] .secondary:hover { border-color: var(--vermilion); color: var(--vermilion); }
+body[data-style="console"] .lookup-actions a { color: var(--vermilion); }
+
+/* Dossier: intake card beside a filed case sheet. */
+body[data-style="dossier"] {
+  --bone: #e9e0d2;
+  --paper: #fbf7ef;
+  --ink: #2a2118;
+  --graphite: #6f5f4d;
+  --rule: #cdbda6;
+  --vermilion: #9b3d2e;
+  --vermilion-deep: #792d21;
+}
+body[data-style="dossier"] .single-panel { max-width: 112ch; grid-template-columns: 260px minmax(0, 1fr); grid-template-areas: "head head" "notice notice" "intake output"; gap: 28px; align-items: start; }
+body[data-style="dossier"] .panel-head { margin-bottom: 0; padding-bottom: 18px; border-bottom: 2px solid var(--ink); }
+body[data-style="dossier"] .panel-head h1 { max-width: 20ch; font-family: "Iowan Old Style", Georgia, "Times New Roman", serif; font-size: 32px; line-height: 1.08; letter-spacing: -.03em; }
+body[data-style="dossier"] .panel-title .lede { max-width: 70ch; }
+body[data-style="dossier"] .intake { display: grid; gap: 14px; padding: 20px; border: 1px solid var(--rule); background: #f3eadb; box-shadow: 8px 10px 22px rgba(42, 33, 24, .12); }
+body[data-style="dossier"] .intake-label { display: block; margin: 0; padding-bottom: 10px; border-bottom: 1px solid var(--rule); color: var(--vermilion); font-size: 11px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+body[data-style="dossier"] .intake .lookup-form,
+body[data-style="dossier"] .intake .dataset-picker,
+body[data-style="dossier"] .intake .lookup-actions { grid-area: auto; }
+body[data-style="dossier"] .lookup-form { grid-template-columns: 1fr; }
+body[data-style="dossier"] .lookup-form .primary { width: 100%; padding: 12px 16px; background: var(--vermilion); border-color: var(--vermilion); }
+body[data-style="dossier"] .dataset-picker { margin: 0; }
+body[data-style="dossier"] .intake .lookup-actions { flex-direction: column; align-items: stretch; margin-top: 4px; }
+body[data-style="dossier"] .output-block { padding: 22px; border: 1px solid var(--rule); background: var(--paper); }
+body[data-style="dossier"] .output-head { padding: 10px 0 12px; background: var(--paper); border-bottom: 1px solid var(--rule); }
+body[data-style="dossier"] .output-head h2 { font-size: 13px; letter-spacing: .14em; }
+body[data-style="dossier"] .output-block .status { margin: 16px 0; padding: 12px 14px; border: 1px solid var(--rule); border-left: 1px solid var(--vermilion); background: #f4ecdf; }
+body[data-style="dossier"] .output-block textarea { min-height: 56vh; padding: 18px; border: 1px solid var(--rule); background: #fffdf8; font-size: 13px; line-height: 1.7; }
+body[data-style="dossier"] .lookup-actions a { color: var(--vermilion); }
 
 .dataset-ops .data-table-wrap { overflow-x: auto; }
 .dataset-ops .data-table { margin-bottom: 10px; }
@@ -177,6 +254,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .panel-head { align-items: flex-start; flex-direction: column; gap: 12px; }
   .output-head { top: 64px; }
   .lookup-form { grid-template-columns: 1fr; }
+  body[data-style="dossier"] .single-panel { grid-template-columns: 1fr; grid-template-areas: "head" "notice" "intake" "output"; }
+  body[data-style="dossier"] .intake { box-shadow: none; }
 }
 
 @media (max-width: 620px) {

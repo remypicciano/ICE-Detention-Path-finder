@@ -13,6 +13,7 @@ import {
   indexPage,
   lookupPage,
   makeHistoryEntry,
+  styleOf,
   type BulkResult,
   type IndexOptions,
   type Manifest,
@@ -198,6 +199,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
   const single = isStaging(url);
+  const styleFor = (value: unknown) => (single ? styleOf(value) : "record");
+  const style = styleFor(url.searchParams.get("style"));
 
   if (path === "/health") return text("ok");
   if (path === "/style.css" || path === "/app.js" || path === "/favicon.ico") {
@@ -229,6 +232,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         error: null,
         enteredIdentifier: url.searchParams.get("q") || "",
         enteredRelease: url.searchParams.get("release") || manifestValue.default_release,
+        style,
       }),
     );
   }
@@ -260,17 +264,20 @@ async function handle(request: Request, env: Env): Promise<Response> {
         updateMessage: null,
         enteredIdentifier: "",
         enteredRelease: manifestValue.default_release,
+        style,
       }),
     );
   }
 
-  if (request.method === "GET" && path === "/history") return html(historyPage(manifestValue));
-  if (request.method === "GET" && path === "/help") return html(helpPage(manifestValue));
+  if (request.method === "GET" && path === "/history") return html(historyPage(manifestValue, style));
+  if (request.method === "GET" && path === "/help") return html(helpPage(manifestValue, style));
   if (request.method === "GET" && path === "/datasets") {
-    return html(single ? datasetOpsPage(manifestValue) : datasetsPage(manifestValue));
+    return html(
+      single ? datasetOpsPage(manifestValue, null, style) : datasetsPage(manifestValue, style),
+    );
   }
   if (request.method === "GET" && path === "/bulk") {
-    return html(bulkPage(manifestValue, null, null, null, null));
+    return html(bulkPage(manifestValue, null, null, null, null, style));
   }
 
   if (request.method === "POST" && path === "/api/lookup") {
@@ -307,6 +314,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
 
   if (request.method === "POST" && (path === "/search" || path === "/manual")) {
     const form = await request.formData();
+    const formStyle = styleFor(form.get("style"));
     const outcome = await lookupFromForm(request, env, manifestValue, form);
     if (!outcome.ok) {
       return html(
@@ -318,6 +326,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
           updateMessage: null,
           enteredIdentifier: clean(form.get("identifier")),
           enteredRelease: clean(form.get("release")) || manifestValue.default_release,
+          style: formStyle,
         }),
         outcome.status,
       );
@@ -331,6 +340,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         updateMessage: null,
         enteredIdentifier: outcome.identifier,
         enteredRelease: outcome.releaseKey,
+        style: formStyle,
       }),
     );
   }
@@ -354,9 +364,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && path === "/update-check") {
     const form = await request.formData();
     const view = clean(form.get("view"));
+    const formStyle = styleFor(form.get("style"));
     const message = await updateMessage(manifestValue.app_version);
     if (single && view === "dataset") {
-      return html(datasetOpsPage(manifestValue, message));
+      return html(datasetOpsPage(manifestValue, message, formStyle));
     }
     return html(
       renderIndex({
@@ -366,6 +377,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         updateMessage: message,
         enteredIdentifier: clean(form.get("identifier")),
         enteredRelease: clean(form.get("release")) || manifestValue.default_release,
+        style: formStyle,
       }),
     );
   }
@@ -373,6 +385,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && path === "/bulk") {
     if (!rateLimit(request, "bulk", 8)) return text("Too many requests. Please wait a moment.", 429);
     const form = await request.formData();
+    const formStyle = styleFor(form.get("style"));
     const file = form.get("file");
     let raw = "";
     if (file && typeof file !== "string" && file.size > 0) raw = await file.text();
@@ -383,7 +396,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       if (!raw.trim()) throw new Error("Upload a JSON file or paste the identifier list first.");
       items = parseIdentifiers(raw);
     } catch (error) {
-      return html(bulkPage(manifestValue, null, null, (error as Error).message, null));
+      return html(bulkPage(manifestValue, null, null, (error as Error).message, null, formStyle));
     }
 
     const cache = newShardCache();
@@ -427,6 +440,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         { found: foundCount, failed: results.length - foundCount, total: results.length },
         null,
         token,
+        formStyle,
       ),
     );
   }

@@ -134,7 +134,11 @@
       row.className = 'clickable';
       fillRow(row, entry);
       row.addEventListener('click', () => {
-        window.location.href = `${base}/?q=${encodeURIComponent(entry.identifier)}`;
+        const params = new URLSearchParams({ q: entry.identifier });
+        if (body.dataset.style && body.dataset.style !== 'record') {
+          params.set('style', body.dataset.style);
+        }
+        window.location.href = `${base}/?${params}`;
       });
       tbody.appendChild(row);
     });
@@ -163,6 +167,36 @@
     else if (!status.textContent.includes(message)) {
       status.textContent = `${status.textContent} ${message}`;
     }
+  }
+
+  function applyStyle(style) {
+    body.dataset.style = style;
+    $('meta[name="color-scheme"]')?.setAttribute('content', style === 'console' ? 'dark' : 'light');
+    $$('input[type="hidden"][name="style"]').forEach((field) => {
+      field.value = style;
+    });
+    $$('a[href]').forEach((link) => {
+      const href = link.getAttribute('href') || '';
+      if (!href.startsWith('/') || href.startsWith('//') || href.includes('/export.')) return;
+      const url = new URL(href, window.location.origin);
+      if (url.origin !== window.location.origin) return;
+      if (style === 'record') url.searchParams.delete('style');
+      else url.searchParams.set('style', style);
+      link.setAttribute('href', `${url.pathname}${url.search}${url.hash}`);
+    });
+  }
+
+  function setupStyleSwitch() {
+    const select = $('#style-select');
+    applyStyle(body.dataset.style || 'record');
+    select?.addEventListener('change', () => {
+      const style = select.value;
+      applyStyle(style);
+      const url = new URL(window.location.href);
+      if (style === 'record') url.searchParams.delete('style');
+      else url.searchParams.set('style', style);
+      window.history.replaceState(null, '', url);
+    });
   }
 
   function setupMainPage() {
@@ -409,4 +443,5 @@
   setupMainPage();
   setupBulkPage();
   setupHistoryPage();
+  setupStyleSwitch();
 })();
