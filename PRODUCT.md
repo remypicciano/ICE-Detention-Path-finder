@@ -33,6 +33,7 @@ Production at `https://bronx.remypicciano.me`; staging at `https://bronx-staging
 - Free-tier Cloudflare only: Workers Free + R2 Free. No paid Workers, containers, or public API.
 - Staging and production use separate Workers and R2 buckets.
 - Staging uses one lookup panel and keeps the Datasets tab; production keeps the two-column workbench.
+- Staging offers three visual/workflow studies — Record, Console, Dossier — switchable without changing lookup data, rendered pathway text, history, or cache keys.
 - Visible UI copy and rendered pathway text are in scope for preservation; redesign is visual only.
 
 ## Brand Commitments

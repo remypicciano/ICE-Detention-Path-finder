@@ -72,14 +72,15 @@ components:
 
 **Creative North Star: "Central Rail Record."**
 
-A desktop-first lookup surface built from rules, columns, and typographic hierarchy rather than cards. Production is a ruled record sheet with a narrow identifier rail on the left and a paragraph-width pathway field on the right. Staging reduces that to one ruled panel: identifier in, pathway out. Nothing floats, nothing glows, nothing announces itself as a marketing surface.
+A desktop-first lookup surface built from rules, columns, and typographic hierarchy rather than cards. Production is a ruled record sheet with a narrow identifier rail on the left and a paragraph-width pathway field on the right. Staging reduces that to one panel with three style studies: Record keeps the ruled sheet, Console turns it into a terminal, Dossier files it as a case sheet. Nothing glows; nothing announces itself as a marketing surface.
 
 Color is almost entirely ink on bone paper. Vermilion appears only on the active navigation state and provenance marks — the dataset watermark and the current record — so it reads as a filing mark rather than decoration. The interface stays quiet while the pathway text carries the weight of the work.
 
 **Key Characteristics:**
 
 - Two-column workbench on production; one-panel lookup on staging.
-- Hairline rules and typographic weight replace panels, shadows, and badges.
+- Three staging styles share one lookup path: Record, Console, Dossier. They change surface and placement only.
+- Hairline rules and typographic weight replace panels, shadows, and badges in production and Record.
 - Identifier, status, and watermark are always in the same place.
 - Controls are square, compact, and system-font native.
 - Pathway output is monospaced, editable, and measured for reading.
@@ -104,7 +105,7 @@ Bone ground, paper fields, iron-black type, and a single vermilion provenance ma
 
 **The Vermilion Rule.** Vermilion marks where the user is or where the data came from. If it is not active state or provenance, it does not get vermilion.
 
-**The No-Card Rule.** Groups are made with rules, spacing, and alignment. No rounded card stacks, gradients, or drop shadows.
+**The No-Card Rule.** In production and Record, groups are made with rules, spacing, and alignment. No rounded card stacks, gradients, or drop shadows. Console uses terminal frames; Dossier uses one intake card.
 
 ## Typography
 
@@ -132,9 +133,19 @@ One family carries navigation, labels, and headings; monospace carries identifie
 - Other pages: single ruled record column with the same head, section rules, and table language.
 - Small screens: one column; rail loses sticky position and vertical divider.
 
+## Staging style studies
+
+Switch with the **Staging style** control or `?style=record|console|dossier`. The change is visual only: same DOM path, same cache key, same JSON response, same pathway text.
+
+- **Record** — default bone ground, paper field, vermilion provenance mark. Head, form, dataset disclosure, status, output, then actions. The baseline ruled sheet.
+- **Console** — near-black terminal ground, green signal color, mono throughout. The input gets a `›` prompt, the output gets a `$` heading and `>` status marker, and controls read as compact commands. Dense, linear, instrument-like.
+- **Dossier** — warm paper ground, serif display heading, rust accent. Intake becomes a left card; the pathway becomes a right case sheet with a 1px border and one soft, offset shadow. Slower reading posture, same controls.
+
+The sticky output head and auto-copy stay in all three. Console changes the page’s `color-scheme` to dark; Record and Dossier stay light.
+
 ## Elevation & Depth
 
-Flat. Depth comes from paper-on-bone contrast and 1px rules. Dialogs use a single hard shadow with offset; no ambient color halos.
+Production and Record stay flat; depth comes from paper-on-bone contrast and 1px rules. Console uses bordered terminal frames. Dossier allows one offset, softly blurred shadow on the intake card. Dialogs use a single hard shadow with offset; no ambient color halos.
 
 ## Shapes
 
@@ -158,6 +169,6 @@ Flat. Depth comes from paper-on-bone contrast and 1px rules. Dialogs use a singl
 - Keep controls in the same order; redesign placement and density only.
 - Keep identifiers and pathway text monospaced.
 - Use rules and whitespace to separate groups.
-- Don't add cards, gradients, hero art, icons, marketing copy, rounded pills, or decorative motion.
+- Don't add cards, gradients, hero art, icons, marketing copy, rounded pills, or decorative motion to production or Record. Console and Dossier use only the framing described above.
 - Don't recolor success states green; a plain ruled status is enough.
 - Don't hide the dataset watermark or browser-local history note.

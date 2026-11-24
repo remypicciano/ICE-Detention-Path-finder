@@ -38,7 +38,15 @@ Run Python commands from the project root with `python -m website.offline.<modul
 
 ## Staging and production views
 
-Staging uses a single ruled panel: identifier field, Search, status, and output. The release selector sits under a collapsed **Dataset** disclosure. Manual entries, copy, export, update check, demo, and bulk search remain in the same panel. Production keeps the original workbench. Both render identical pathway text.
+Staging uses one lookup panel with three switchable style studies: identifier field, Search, status, and output. The release selector sits under a collapsed **Dataset** disclosure. Manual entries, copy, export, update check, demo, and bulk search remain in the same panel. Production keeps the original workbench. All styles render identical pathway text.
+
+| Style | `?style=` | Direction |
+| --- | --- | --- |
+| Record | `record` (default) | Ruled bone-paper sheet: compact, square, typographic. |
+| Console | `console` | Dark terminal: command prompt input, green status, mono output. |
+| Dossier | `dossier` | Warm case file: intake card beside a filed pathway sheet. |
+
+The **Staging style** selector swaps theme and workflow layout in place. Style survives navigation through `?style=`; it never changes lookup data, local history, or cached text. Production ignores the parameter.
 
 Staging lookup is in place. `POST /api/lookup` returns the rendered pathway as JSON; the page updates status, pathway, history, and form state without reloading. Repeated queries reuse a browser session cache keyed by dataset build, release, identifier, and manual overrides. The Worker keeps recently read shards warm for five minutes. Production keeps full-page search.
 
@@ -133,6 +141,8 @@ Update the URLs in `data-sources.json` if the publisher changes its links, then 
 | Route | Function |
 | --- | --- |
 | `GET /` | One-panel search on staging, workbench on production |
+| `GET /?style=console` | Staging style study; `record` or `dossier` also accepted |
+| `POST /api/lookup` | JSON lookup for in-place staging search |
 | `GET /demo` | Demo pathway |
 | `POST /search` | Identifier / stay / stint lookup |
 | `POST /manual` | Re-render with manual entries |
