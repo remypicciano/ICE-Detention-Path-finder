@@ -2,6 +2,7 @@
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 .coverage
 *.egg-info/
 *.py[cod]
@@ -14,3 +15,14 @@ pathway-*.html
 *.app/
 uv.lock
 .Rproj.user
+.cloudflare/
+.wrangler/
+website/.build/
+node_modules/
+*.download.tmp
+.Rhistory
+.Rproj.user/
+Rplots.pdf
+*.Rproj
+main.R
+ddp-*/data-sources.json
