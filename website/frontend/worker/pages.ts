@@ -345,9 +345,9 @@ export function lookupPage(options: IndexOptions): string {
     <p class="intake-label">Search</p>
     ${form}
     ${dataset}
-    ${actions}
   </div>
   ${output}
+  ${actions}
 </section>
 
 ${overlayForms(overrides, style)}`;

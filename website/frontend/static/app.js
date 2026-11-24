@@ -151,6 +151,22 @@
     if (field) field.value = value;
   }
 
+  function syncStyleForm(identifier, release) {
+    const form = $('.style-switch');
+    if (!form) return;
+    const q = $('[name="q"]', form);
+    const releaseField = $('[name="release"]', form);
+    if (q) q.value = identifier;
+    if (releaseField) releaseField.value = release;
+  }
+
+  function syncTopbarHeight() {
+    const topbar = $('.topbar');
+    if (!topbar) return;
+    const height = Math.ceil(topbar.getBoundingClientRect().height);
+    if (height > 0) document.documentElement.style.setProperty('--topbar-h', `${height}px`);
+  }
+
   async function copyTimeline(append) {
     const resultText = $('#result-text');
     if (!resultText || !resultText.value) return;
@@ -175,6 +191,7 @@
     $$('input[type="hidden"][name="style"]').forEach((field) => {
       field.value = style;
     });
+    syncStyleForm($('#identifier')?.value || '', $('#release')?.value || '');
     $$('a[href]').forEach((link) => {
       const href = link.getAttribute('href') || '';
       if (!href.startsWith('/') || href.startsWith('//') || href.includes('/export.')) return;
@@ -264,6 +281,7 @@
       if (!resultText || !identifier) return;
       const overrideText = JSON.stringify(payload.overrides || {});
       identifier.value = entered;
+      syncStyleForm(entered, release);
       resultText.value = payload.text || '';
       if (statusLine) statusLine.textContent = payload.status || '';
       stayCount = Number(payload.stays || 0);
@@ -294,6 +312,7 @@
     function applyLookupError(message) {
       if (resultText) resultText.value = '';
       if (statusLine) statusLine.textContent = message;
+      syncStyleForm(identifier?.value || '', currentRelease());
       body.dataset.stayCount = '0';
       body.dataset.overrides = '{}';
       delete body.dataset.historyEntry;
@@ -440,6 +459,8 @@
     $('#history-filter')?.addEventListener('input', renderHistory);
   }
 
+  syncTopbarHeight();
+  window.addEventListener('resize', syncTopbarHeight);
   setupMainPage();
   setupBulkPage();
   setupHistoryPage();
