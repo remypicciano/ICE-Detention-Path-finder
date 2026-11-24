@@ -19,13 +19,6 @@ export type Manifest = {
   releases: ReleaseInfo[];
 };
 
-export const SCHEMES = ["record", "ledger", "margin"] as const;
-export type Scheme = (typeof SCHEMES)[number];
-
-export function schemeOf(value: unknown): Scheme {
-  return SCHEMES.includes(value as Scheme) ? (value as Scheme) : "record";
-}
-
 export type Result = {
   doc: PathwayDoc;
   overrides: Overrides;
@@ -60,7 +53,6 @@ export type IndexOptions = {
   updateMessage: string | null;
   enteredIdentifier: string;
   enteredRelease: string;
-  scheme: Scheme;
 };
 
 export function escapeHtml(value: unknown): string {
@@ -88,28 +80,7 @@ function releaseOptions(releases: ReleaseInfo[], selected: string): string {
     .join("");
 }
 
-const SCHEME_LABELS: Record<Scheme, string> = {
-  record: "Record",
-  ledger: "Ledger",
-  margin: "Margin",
-};
-
-function schemeSuffix(scheme: Scheme): string {
-  return scheme === "record" ? "" : `?scheme=${scheme}`;
-}
-
-function schemeSwitch(scheme: Scheme): string {
-  const options = SCHEMES.map(
-    (key) =>
-      `<option value="${key}"${key === scheme ? " selected" : ""}>${SCHEME_LABELS[key]}</option>`,
-  ).join("");
-  return `<form class="scheme-switch" method="get" action="/">
-  <label for="scheme-select">Staging scheme</label>
-  <select id="scheme-select" name="scheme">${options}</select>
-</form>`;
-}
-
-function overlayForms(overrides: Overrides, scheme: Scheme, view = "search"): string {
+function overlayForms(overrides: Overrides, view = "search"): string {
   return `<dialog id="manual-dialog" class="modal">
   <form id="manual-form" method="post" action="/manual" class="stack">
     <h2>Manual entries</h2>
@@ -118,7 +89,6 @@ function overlayForms(overrides: Overrides, scheme: Scheme, view = "search"): st
     <input type="hidden" name="release" id="manual-release">
     <input type="hidden" name="overrides" id="manual-overrides">
     <input type="hidden" name="view" value="${attr(view)}">
-    <input type="hidden" name="scheme" value="${attr(scheme)}">
     <div id="manual-fields" class="manual-fields"></div>
     <div class="modal-actions">
       <button type="button" id="manual-clear" class="secondary">Clear all</button>
@@ -138,7 +108,6 @@ function overlayForms(overrides: Overrides, scheme: Scheme, view = "search"): st
   <input type="hidden" name="release" id="update-release">
   <input type="hidden" name="overrides" id="update-overrides">
   <input type="hidden" name="view" value="${attr(view)}">
-  <input type="hidden" name="scheme" value="${attr(scheme)}">
 </form>`;
 }
 
@@ -161,7 +130,7 @@ export function layout(
   content: string,
   manifest: Manifest,
   result: Result | null = null,
-  scheme: Scheme = "record",
+  inlineSearch = false,
 ): string {
   const editable = JSON.stringify(WEB_EDITABLE_FIELDS);
   const nav = [
@@ -173,7 +142,7 @@ export function layout(
   ]
     .map(
       ([label, href]) =>
-        `<a href="${href}${schemeSuffix(scheme)}"${label === title ? ' aria-current="page"' : ""}>${label}</a>`,
+        `<a href="${href}"${label === title ? ' aria-current="page"' : ""}>${label}</a>`,
     )
     .join("");
   const resultAttrs = result
@@ -190,9 +159,9 @@ export function layout(
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
-<body data-base="" data-scheme="${attr(scheme)}" data-editable-fields='${attr(editable)}' ${resultAttrs}>
+<body data-base="" ${inlineSearch ? 'data-inline-search="1"' : ""} data-index-build="${attr(manifest.built_at)}" data-editable-fields='${attr(editable)}' ${resultAttrs}>
   <header class="topbar">
-    <a class="brand" href="/${schemeSuffix(scheme)}">
+    <a class="brand" href="/">
       <span class="brand-mark" aria-hidden="true">❄</span>
       <span>ICE Detention Pathway</span>
       <span class="version">v${attr(manifest.app_version)}</span>
@@ -285,13 +254,13 @@ ${notices(options)}
   </section>
 </div>
 
-${overlayForms(overrides, options.scheme)}`;
-  return layout("Search", content, manifest, result, options.scheme);
+${overlayForms(overrides)}`;
+  return layout("Search", content, manifest, result);
 }
 
 // Staging uses one ruled panel: identifier in, pathway out.
 export function lookupPage(options: IndexOptions): string {
-  const { manifest, result, status, scheme } = options;
+  const { manifest, result, status } = options;
   const selected = options.enteredRelease || manifest.default_release;
   const overrides = result ? result.overrides : {};
   const content = `<section class="single-panel">
@@ -300,7 +269,6 @@ export function lookupPage(options: IndexOptions): string {
       <h1>Reconstruct a recorded route through ICE custody.</h1>
       <p class="lede">Paste a <code>unique_identifier</code>, <code>stay_ID</code>, or <code>stint_ID</code>. Every recorded stay is shown separately, in book-in order.</p>
     </div>
-    ${schemeSwitch(scheme)}
   </div>
 
 ${notices(options)}
@@ -308,7 +276,6 @@ ${notices(options)}
   <form id="search-form" method="post" action="/search" class="lookup-form">
     <input type="hidden" name="overrides" id="overrides-input" value='${attr(JSON.stringify(overrides))}'>
     <input type="hidden" name="view" value="search">
-    <input type="hidden" name="scheme" value="${attr(scheme)}">
     <label class="visually-hidden" for="identifier">Unique identifier</label>
     <input id="identifier" name="identifier" type="text" maxlength="200" autocomplete="off" spellcheck="false"
            placeholder="Paste an identifier…" value="${attr(enteredIdentifier(options))}">
@@ -335,14 +302,14 @@ ${notices(options)}
       <button type="button" id="manual-button" class="secondary">All manual entries…</button>
       <button type="button" id="export-button" class="secondary">Export JSON…</button>
       <button type="button" id="update-button" class="secondary">Check for Updates…</button>
-      <a href="/demo${schemeSuffix(scheme)}">Load the demo pathway</a>
-      <a href="/bulk${schemeSuffix(scheme)}">Bulk Search…</a>
+      <a href="/demo">Load the demo pathway</a>
+      <a href="/bulk">Bulk Search…</a>
     </div>
   </div>
 
-${overlayForms(overrides, scheme)}
+${overlayForms(overrides)}
 </section>`;
-  return layout("Search", content, manifest, result, scheme);
+  return layout("Search", content, manifest, result, true);
 }
 
 export function bulkPage(
@@ -351,7 +318,6 @@ export function bulkPage(
   summary: { found: number; failed: number; total: number } | null,
   error: string | null,
   token: string | null,
-  scheme: Scheme = "record",
 ): string {
   const alert = error ? `<div class="alert" role="alert">${escapeHtml(error)}</div>` : "";
   let resultPanel = "";
@@ -397,7 +363,6 @@ ${alert}
 
 <section class="panel">
   <form method="post" action="/bulk" enctype="multipart/form-data" class="stack">
-    <input type="hidden" name="scheme" value="${attr(scheme)}">
     <div class="field-row">
       <div class="field grow">
         <label for="bulk-file">Identifiers JSON</label>
@@ -416,10 +381,10 @@ ${alert}
     <div><button type="submit" class="primary">Run bulk search</button></div>
   </form>
 </section>${resultPanel}`;
-  return layout("Bulk search", content, manifest, null, scheme);
+  return layout("Bulk search", content, manifest);
 }
 
-export function historyPage(manifest: Manifest, scheme: Scheme = "record"): string {
+export function historyPage(manifest: Manifest): string {
   const content = `<section class="hero compact">
   <h1>Every lookup in this browser.</h1>
   <p class="tagline">History</p>
@@ -436,10 +401,10 @@ export function historyPage(manifest: Manifest, scheme: Scheme = "record"): stri
   </table>
   <p class="hint" id="history-empty" hidden>No lookups yet.</p>
 </section>`;
-  return layout("History", content, manifest, null, scheme);
+  return layout("History", content, manifest);
 }
 
-export function helpPage(manifest: Manifest, scheme: Scheme = "record"): string {
+export function helpPage(manifest: Manifest): string {
   const content = `<section class="hero compact">
   <h1>How to read a pathway.</h1>
   <p class="tagline">Help</p>
@@ -471,10 +436,10 @@ export function helpPage(manifest: Manifest, scheme: Scheme = "record"): string 
   <h2>Interpretation</h2>
   <p>This tool reconstructs recorded detention history, not a confirmed deportation outcome or a real-time location. Absence of a record is not evidence of absence in reality. The source data comes from ICE through FOIA requests, has known limitations, and may be revised. Treat pathways as investigative leads and verify consequential claims against primary records.</p>
 </section>`;
-  return layout("Help", content, manifest, null, scheme);
+  return layout("Help", content, manifest);
 }
 
-export function datasetsPage(manifest: Manifest, scheme: Scheme = "record"): string {
+export function datasetsPage(manifest: Manifest): string {
   const articles = manifest.releases.length
     ? manifest.releases
         .map(
@@ -492,14 +457,13 @@ export function datasetsPage(manifest: Manifest, scheme: Scheme = "record"): str
 ${articles}
   <p class="hint">Required source files: <code>arrests-latest.parquet</code>, <code>detention-stints-latest.parquet</code>, <code>facilities-latest.parquet</code>. Identifiers are re-salted by the publisher at each release, so an identifier from an older dataset will not resolve in a newer one.</p>
 </section>`;
-  return layout("Datasets", content, manifest, null, scheme);
+  return layout("Datasets", content, manifest);
 }
 
 // Staging keeps the Datasets tab, with the refresh runbook visible.
 export function datasetOpsPage(
   manifest: Manifest,
   updateMessage: string | null = null,
-  scheme: Scheme = "record",
 ): string {
   const notice = updateMessage
     ? `<div class="notice" role="status"><pre>${escapeHtml(updateMessage)}</pre></div>`
@@ -560,11 +524,10 @@ ${notice}
     <input type="hidden" name="identifier" value="">
     <input type="hidden" name="release" value="${attr(manifest.default_release)}">
     <input type="hidden" name="view" value="dataset">
-    <input type="hidden" name="scheme" value="${attr(scheme)}">
     <button type="submit" class="secondary">Check for Updates…</button>
   </form>
 </section>`;
-  return layout("Datasets", content, manifest, null, scheme);
+  return layout("Datasets", content, manifest);
 }
 
 export function makeHistoryEntry(doc: PathwayDoc, label: string | null = null): Result["historyEntry"] {

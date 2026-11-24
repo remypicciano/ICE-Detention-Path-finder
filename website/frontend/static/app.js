@@ -5,6 +5,9 @@
   const base = body.dataset.base || '';
   const HISTORY_KEY = 'bronx.history.v1';
   const HISTORY_LIMIT = 5000;
+  const LOOKUP_CACHE_KEY = 'bronx.lookup-cache.v1';
+  const LOOKUP_CACHE_LIMIT = 60;
+  const lookupMemory = new Map();
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
@@ -22,6 +25,40 @@
       localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(-HISTORY_LIMIT)));
     } catch (_error) {
       // Private browsing or a full quota must not break a lookup.
+    }
+  }
+
+  function readLookupCache(key) {
+    if (lookupMemory.has(key)) return lookupMemory.get(key);
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(LOOKUP_CACHE_KEY) || '{}');
+      const payload = stored[key];
+      if (payload) {
+        lookupMemory.set(key, payload);
+        return payload;
+      }
+    } catch (_error) {
+      // A cache miss just costs one lookup.
+    }
+    return null;
+  }
+
+  function writeLookupCache(key, payload) {
+    lookupMemory.set(key, payload);
+    if (lookupMemory.size > LOOKUP_CACHE_LIMIT) {
+      const oldest = lookupMemory.keys().next().value;
+      lookupMemory.delete(oldest);
+    }
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(LOOKUP_CACHE_KEY) || '{}');
+      stored[key] = payload;
+      const keys = Object.keys(stored);
+      if (keys.length > LOOKUP_CACHE_LIMIT) {
+        keys.slice(0, keys.length - LOOKUP_CACHE_LIMIT).forEach((old) => delete stored[old]);
+      }
+      sessionStorage.setItem(LOOKUP_CACHE_KEY, JSON.stringify(stored));
+    } catch (_error) {
+      // Memory cache still works when storage is unavailable or full.
     }
   }
 
@@ -97,11 +134,7 @@
       row.className = 'clickable';
       fillRow(row, entry);
       row.addEventListener('click', () => {
-        const params = new URLSearchParams({ q: entry.identifier });
-        if (body.dataset.scheme && body.dataset.scheme !== 'record') {
-          params.set('scheme', body.dataset.scheme);
-        }
-        window.location.href = `${base}/?${params}`;
+        window.location.href = `${base}/?q=${encodeURIComponent(entry.identifier)}`;
       });
       tbody.appendChild(row);
     });
@@ -132,23 +165,26 @@
     }
   }
 
-  function setupSchemeSwitch() {
-    const select = $('#scheme-select');
-    select?.addEventListener('change', () => {
-      const scheme = select.value;
-      body.dataset.scheme = scheme;
-      const url = new URL(window.location.href);
-      url.searchParams.set('scheme', scheme);
-      window.history.replaceState(null, '', url);
-      $$('input[type="hidden"][name="scheme"]').forEach((field) => {
-        field.value = scheme;
-      });
-    });
-  }
-
   function setupMainPage() {
     const resultText = $('#result-text');
     const identifier = $('#identifier');
+    const statusLine = $('#status-line');
+    const dialog = $('#manual-dialog');
+    const manualButton = $('#manual-button');
+    const editable = JSON.parse(body.dataset.editableFields || '[]');
+    const inline = body.dataset.inlineSearch === '1';
+    const cacheVersion = body.dataset.indexBuild || '0';
+    let stayCount = Number(body.dataset.stayCount || 0);
+    let overrides = JSON.parse(body.dataset.overrides || '{}');
+    let pending = false;
+
+    const currentRelease = () => $('#release')?.value || '';
+    const cacheKey = (entered, release, overrideText) =>
+      [cacheVersion, release, entered, overrideText].join('|');
+
+    // A query string from the history page pre-fills the identifier box.
+    const preset = new URLSearchParams(window.location.search).get('q');
+    if (preset && identifier) identifier.value = preset;
 
     if (resultText && resultText.value) {
       const entry = JSON.parse(body.dataset.historyEntry || 'null');
@@ -156,12 +192,22 @@
         addHistory(entry);
         void copyTimeline(true);
       }
+      if (inline && identifier) {
+        const overrideText = $('#overrides-input')?.value || '{}';
+        writeLookupCache(cacheKey(identifier.value, currentRelease(), overrideText), {
+          ok: true,
+          identifier: entry?.identifier || identifier.value,
+          release: currentRelease(),
+          text: resultText.value,
+          status: statusLine?.textContent || '',
+          stays: stayCount,
+          rows: entry?.n_rows || 0,
+          overrides,
+          historyEntry: entry,
+        });
+      }
     }
     renderRecent();
-
-    // A query string from the history page pre-fills the identifier box.
-    const preset = new URLSearchParams(window.location.search).get('q');
-    if (preset && identifier) identifier.value = preset;
 
     $('#copy-button')?.addEventListener('click', () => void copyTimeline(false));
     $('#copy-inline-button')?.addEventListener('click', () => void copyTimeline(false));
@@ -169,22 +215,108 @@
     $('#export-button')?.addEventListener('click', () => {
       if (!resultText || !resultText.value || identifier?.value === 'UFAKE-0001') return;
       setHidden('#export-identifier', identifier?.value || '');
-      setHidden('#export-release', $('#release')?.value || '');
+      setHidden('#export-release', currentRelease());
       $('#export-form')?.submit();
     });
 
     $('#update-button')?.addEventListener('click', () => {
       setHidden('#update-identifier', identifier?.value || '');
-      setHidden('#update-release', $('#release')?.value || '');
+      setHidden('#update-release', currentRelease());
       setHidden('#update-overrides', $('#overrides-input')?.value || '{}');
       $('#update-form')?.submit();
     });
 
-    const dialog = $('#manual-dialog');
-    const manualButton = $('#manual-button');
-    const editable = JSON.parse(body.dataset.editableFields || '[]');
-    const stayCount = Number(body.dataset.stayCount || 0);
-    const overrides = JSON.parse(body.dataset.overrides || '{}');
+    function applyLookup(payload, entered, release) {
+      if (!resultText || !identifier) return;
+      const overrideText = JSON.stringify(payload.overrides || {});
+      identifier.value = entered;
+      resultText.value = payload.text || '';
+      if (statusLine) statusLine.textContent = payload.status || '';
+      stayCount = Number(payload.stays || 0);
+      overrides = payload.overrides || {};
+      body.dataset.stayCount = String(stayCount);
+      body.dataset.overrides = overrideText;
+      if (payload.historyEntry) body.dataset.historyEntry = JSON.stringify(payload.historyEntry);
+      else delete body.dataset.historyEntry;
+      setHidden('#overrides-input', overrideText);
+      setHidden('#manual-identifier', entered);
+      setHidden('#manual-release', release);
+      setHidden('#manual-overrides', overrideText);
+      setHidden('#export-identifier', entered);
+      setHidden('#export-release', release);
+      setHidden('#update-identifier', entered);
+      setHidden('#update-release', release);
+      setHidden('#update-overrides', overrideText);
+      if (payload.historyEntry) addHistory(payload.historyEntry);
+      renderRecent();
+      if (manualButton) manualButton.disabled = !resultText.value || entered === 'UFAKE-0001';
+      const url = new URL(window.location.href);
+      url.searchParams.set('q', entered);
+      url.searchParams.set('release', release);
+      window.history.replaceState(null, '', url);
+      if (resultText.value) void copyTimeline(true);
+    }
+
+    function applyLookupError(message) {
+      if (resultText) resultText.value = '';
+      if (statusLine) statusLine.textContent = message;
+      body.dataset.stayCount = '0';
+      body.dataset.overrides = '{}';
+      delete body.dataset.historyEntry;
+      setHidden('#overrides-input', '{}');
+      overrides = {};
+      stayCount = 0;
+      if (manualButton) manualButton.disabled = true;
+      renderRecent();
+    }
+
+    async function submitLookup(form, entered, release, overrideText) {
+      if (!entered) {
+        if (statusLine) statusLine.textContent = 'Enter an identifier first.';
+        return;
+      }
+      if (pending) return;
+      const key = cacheKey(entered, release, overrideText);
+      const cached = readLookupCache(key);
+      if (cached) {
+        applyLookup(cached, entered, release);
+        return;
+      }
+      pending = true;
+      if (statusLine) statusLine.textContent = 'Searching…';
+      try {
+        const response = await fetch('/api/lookup', {
+          method: 'POST',
+          body: new FormData(form),
+          headers: { accept: 'application/json' },
+          credentials: 'same-origin',
+        });
+        const payload = await response.json().catch(() => ({
+          error: `Search failed: HTTP ${response.status}`,
+        }));
+        if (!response.ok || payload.error) {
+          applyLookupError(payload.error || `Search failed: HTTP ${response.status}`);
+          return;
+        }
+        writeLookupCache(key, payload);
+        applyLookup(payload, entered, release);
+      } catch (error) {
+        applyLookupError(`Search failed: ${error.message}`);
+      } finally {
+        pending = false;
+      }
+    }
+
+    $('#search-form')?.addEventListener('submit', (event) => {
+      if (!inline) return;
+      event.preventDefault();
+      void submitLookup(
+        event.currentTarget,
+        identifier?.value || '',
+        currentRelease(),
+        $('#overrides-input')?.value || '{}',
+      );
+    });
 
     if (manualButton && (!resultText || !resultText.value || identifier?.value === 'UFAKE-0001')) {
       manualButton.disabled = true;
@@ -228,7 +360,7 @@
     manualButton?.addEventListener('click', () => {
       buildManualFields();
       setHidden('#manual-identifier', identifier?.value || '');
-      setHidden('#manual-release', $('#release')?.value || '');
+      setHidden('#manual-release', currentRelease());
       setHidden('#manual-overrides', $('#overrides-input')?.value || '{}');
       dialog?.showModal();
     });
@@ -236,13 +368,18 @@
     $('#manual-clear')?.addEventListener('click', () => {
       $$('#manual-fields input[data-key]').forEach((input) => { input.value = ''; });
     });
-    $('#manual-form')?.addEventListener('submit', () => {
+    $('#manual-form')?.addEventListener('submit', (event) => {
       const values = {};
       $$('#manual-fields input[data-key]').forEach((input) => {
         const value = input.value.trim();
         if (value) values[input.dataset.key] = value;
       });
-      setHidden('#manual-overrides', JSON.stringify(values));
+      const overrideText = JSON.stringify(values);
+      setHidden('#manual-overrides', overrideText);
+      if (!inline) return;
+      event.preventDefault();
+      dialog?.close();
+      void submitLookup(event.currentTarget, identifier?.value || '', currentRelease(), overrideText);
     });
   }
 
@@ -272,5 +409,4 @@
   setupMainPage();
   setupBulkPage();
   setupHistoryPage();
-  setupSchemeSwitch();
 })();

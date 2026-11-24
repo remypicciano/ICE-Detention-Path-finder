@@ -23,7 +23,10 @@ export type ShardCache = Map<string, Shard | null>;
 
 const MAX_IDENTIFIER = 200;
 const CACHE_MS = 5 * 60 * 1000;
+const SHARD_CACHE_MS = 5 * 60 * 1000;
+const SHARD_CACHE_LIMIT = 512;
 let manifestCache: { value: Manifest; at: number } | undefined;
+const shardCache = new Map<string, { value: Shard | null; at: number }>();
 
 export function clean(value: unknown): string {
   return typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
@@ -72,8 +75,22 @@ async function shardFor(
   const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
   const shardKey = `releases/${releaseKey}/shards/${hex.slice(0, 3)}.json.gz`;
   if (cache.has(shardKey)) return cache.get(shardKey) ?? null;
+
+  const shared = shardCache.get(shardKey);
+  if (shared && Date.now() - shared.at < SHARD_CACHE_MS) {
+    shardCache.delete(shardKey);
+    shardCache.set(shardKey, shared);
+    cache.set(shardKey, shared.value);
+    return shared.value;
+  }
+
   const shard = await readObject<Shard>(env, shardKey);
   cache.set(shardKey, shard);
+  shardCache.set(shardKey, { value: shard, at: Date.now() });
+  if (shardCache.size > SHARD_CACHE_LIMIT) {
+    const oldest = shardCache.keys().next().value;
+    if (oldest) shardCache.delete(oldest);
+  }
   return shard;
 }
 

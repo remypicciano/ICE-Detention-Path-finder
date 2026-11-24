@@ -13,7 +13,6 @@ import {
   indexPage,
   lookupPage,
   makeHistoryEntry,
-  schemeOf,
   type BulkResult,
   type IndexOptions,
   type Manifest,
@@ -47,6 +46,13 @@ function text(value: string, status = 200, headers: Record<string, string> = {})
   return new Response(value, {
     status,
     headers: { "content-type": "text/plain; charset=utf-8", ...headers },
+  });
+}
+
+function json(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value) + "\n", {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
   });
 }
 
@@ -166,11 +172,32 @@ async function updateMessage(current: string): Promise<string> {
   }
 }
 
+type LookupOutcome =
+  | { ok: true; result: Result; releaseKey: string; identifier: string }
+  | { ok: false; error: string; status: number };
+
+async function lookupFromForm(
+  request: Request,
+  env: Env,
+  manifestValue: Manifest,
+  form: FormData,
+): Promise<LookupOutcome> {
+  if (!rateLimit(request, "search", 60)) {
+    return { ok: false, error: "Too many requests. Please wait a moment.", status: 429 };
+  }
+  const identifier = clean(form.get("identifier"));
+  const releaseKey = clean(form.get("release")) || manifestValue.default_release;
+  const overrides = parseOverrides(String(form.get("overrides") || "{}"));
+  const found = await lookup(env, releaseKey, identifier, overrides, newShardCache());
+  if ("error" in found) return { ok: false, error: found.error, status: 200 };
+  const result = resultFor(found.doc, overrides, releaseWatermark(manifestValue, releaseKey));
+  return { ok: true, result, releaseKey, identifier };
+}
+
 async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
   const single = isStaging(url);
-  const scheme = schemeOf(url.searchParams.get("scheme"));
 
   if (path === "/health") return text("ok");
   if (path === "/style.css" || path === "/app.js" || path === "/favicon.ico") {
@@ -202,7 +229,6 @@ async function handle(request: Request, env: Env): Promise<Response> {
         error: null,
         enteredIdentifier: url.searchParams.get("q") || "",
         enteredRelease: url.searchParams.get("release") || manifestValue.default_release,
-        scheme,
       }),
     );
   }
@@ -234,57 +260,77 @@ async function handle(request: Request, env: Env): Promise<Response> {
         updateMessage: null,
         enteredIdentifier: "",
         enteredRelease: manifestValue.default_release,
-        scheme,
       }),
     );
   }
 
-  if (request.method === "GET" && path === "/history") return html(historyPage(manifestValue, scheme));
-  if (request.method === "GET" && path === "/help") return html(helpPage(manifestValue, scheme));
+  if (request.method === "GET" && path === "/history") return html(historyPage(manifestValue));
+  if (request.method === "GET" && path === "/help") return html(helpPage(manifestValue));
   if (request.method === "GET" && path === "/datasets") {
-    return html(
-      single ? datasetOpsPage(manifestValue, null, scheme) : datasetsPage(manifestValue, scheme),
-    );
+    return html(single ? datasetOpsPage(manifestValue) : datasetsPage(manifestValue));
   }
   if (request.method === "GET" && path === "/bulk") {
-    return html(bulkPage(manifestValue, null, null, null, null, scheme));
+    return html(bulkPage(manifestValue, null, null, null, null));
+  }
+
+  if (request.method === "POST" && path === "/api/lookup") {
+    let form: FormData;
+    if ((request.headers.get("content-type") || "").includes("application/json")) {
+      const data = (await request.json()) as Record<string, unknown>;
+      form = new FormData();
+      form.set("identifier", String(data.identifier ?? ""));
+      form.set("release", String(data.release ?? ""));
+      form.set(
+        "overrides",
+        typeof data.overrides === "string"
+          ? data.overrides
+          : JSON.stringify(data.overrides ?? {}),
+      );
+    } else {
+      form = await request.formData();
+    }
+    const outcome = await lookupFromForm(request, env, manifestValue, form);
+    if (!outcome.ok) return json({ error: outcome.error }, outcome.status);
+    const { result, releaseKey, identifier } = outcome;
+    return json({
+      ok: true,
+      identifier,
+      release: releaseKey,
+      text: result.text,
+      status: result.status,
+      stays: result.doc.totals.stays,
+      rows: result.doc.totals.detention_rows,
+      overrides: result.overrides,
+      historyEntry: result.historyEntry,
+    });
   }
 
   if (request.method === "POST" && (path === "/search" || path === "/manual")) {
-    if (!rateLimit(request, "search", 60)) return text("Too many requests. Please wait a moment.", 429);
     const form = await request.formData();
-    const identifier = clean(form.get("identifier"));
-    const releaseKey = clean(form.get("release")) || manifestValue.default_release;
-    const formScheme = schemeOf(form.get("scheme"));
-    const overrides = parseOverrides(String(form.get("overrides") || "{}"));
-    const cache = newShardCache();
-    const found = await lookup(env, releaseKey, identifier, overrides, cache);
-    if ("error" in found) {
+    const outcome = await lookupFromForm(request, env, manifestValue, form);
+    if (!outcome.ok) {
       return html(
         renderIndex({
           manifest: manifestValue,
           result: null,
           status: "Search failed.",
-          error: found.error,
+          error: outcome.error,
           updateMessage: null,
-          enteredIdentifier: identifier,
-          enteredRelease: releaseKey,
-          scheme: formScheme,
+          enteredIdentifier: clean(form.get("identifier")),
+          enteredRelease: clean(form.get("release")) || manifestValue.default_release,
         }),
+        outcome.status,
       );
     }
-    const watermark = releaseWatermark(manifestValue, releaseKey);
-    const result = resultFor(found.doc, overrides, watermark);
     return html(
       renderIndex({
         manifest: manifestValue,
-        result,
-        status: result.status,
+        result: outcome.result,
+        status: outcome.result.status,
         error: null,
         updateMessage: null,
-        enteredIdentifier: identifier,
-        enteredRelease: releaseKey,
-        scheme: formScheme,
+        enteredIdentifier: outcome.identifier,
+        enteredRelease: outcome.releaseKey,
       }),
     );
   }
@@ -308,10 +354,9 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && path === "/update-check") {
     const form = await request.formData();
     const view = clean(form.get("view"));
-    const formScheme = schemeOf(form.get("scheme"));
     const message = await updateMessage(manifestValue.app_version);
     if (single && view === "dataset") {
-      return html(datasetOpsPage(manifestValue, message, formScheme));
+      return html(datasetOpsPage(manifestValue, message));
     }
     return html(
       renderIndex({
@@ -321,7 +366,6 @@ async function handle(request: Request, env: Env): Promise<Response> {
         updateMessage: message,
         enteredIdentifier: clean(form.get("identifier")),
         enteredRelease: clean(form.get("release")) || manifestValue.default_release,
-        scheme: formScheme,
       }),
     );
   }
@@ -329,7 +373,6 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && path === "/bulk") {
     if (!rateLimit(request, "bulk", 8)) return text("Too many requests. Please wait a moment.", 429);
     const form = await request.formData();
-    const formScheme = schemeOf(form.get("scheme"));
     const file = form.get("file");
     let raw = "";
     if (file && typeof file !== "string" && file.size > 0) raw = await file.text();
@@ -340,7 +383,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       if (!raw.trim()) throw new Error("Upload a JSON file or paste the identifier list first.");
       items = parseIdentifiers(raw);
     } catch (error) {
-      return html(bulkPage(manifestValue, null, null, (error as Error).message, null, formScheme));
+      return html(bulkPage(manifestValue, null, null, (error as Error).message, null));
     }
 
     const cache = newShardCache();
@@ -384,7 +427,6 @@ async function handle(request: Request, env: Env): Promise<Response> {
         { found: foundCount, failed: results.length - foundCount, total: results.length },
         null,
         token,
-        formScheme,
       ),
     );
   }
