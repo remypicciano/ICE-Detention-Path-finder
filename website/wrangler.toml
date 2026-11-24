@@ -1,0 +1,34 @@
+name = "bronx"
+main = "frontend/worker/index.ts"
+compatibility_date = "2026-11-23"
+workers_dev = false
+
+# Production: bronx.remypicciano.me
+routes = [
+  { pattern = "bronx.remypicciano.me/*", zone_name = "remypicciano.me" },
+]
+
+[assets]
+directory = "frontend/static"
+binding = "ASSETS"
+
+[[r2_buckets]]
+binding = "DATA"
+bucket_name = "bronx-data"
+
+# Staging: bronx-staging.remypicciano.me
+[env.staging]
+name = "bronx-staging"
+workers_dev = false
+
+[[env.staging.routes]]
+pattern = "bronx-staging.remypicciano.me/*"
+zone_name = "remypicciano.me"
+
+[env.staging.assets]
+directory = "frontend/static"
+binding = "ASSETS"
+
+[[env.staging.r2_buckets]]
+binding = "DATA"
+bucket_name = "bronx-data-staging"
