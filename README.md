@@ -43,6 +43,20 @@ would overstate time in custody.
 This project uses Deportation Data Project ICE exports as source data. It is
 independent and is not affiliated with the project or with ICE.
 
+## Web app
+
+The same lookup engine is also served on Cloudflare Workers Free + R2 Free:
+
+- Production: <https://bronx.remypicciano.me>
+- Staging: <https://bronx-staging.remypicciano.me>
+
+Staging uses a one-panel lookup with the **Datasets** tab; production keeps the
+original workbench. Both render identical pathway text. Source lives in
+[`website/`](website/README.md), split into an offline index pipeline
+(`website/offline/`) and the Worker plus browser assets (`website/frontend/`).
+The build reads the root [`data-sources.json`](data-sources.json), the same URL
+file the desktop downloader uses, so dataset refreshes need no manual copying.
+
 ## What it produces
 
 The output is a structured, machine-readable text format: stints joined by
