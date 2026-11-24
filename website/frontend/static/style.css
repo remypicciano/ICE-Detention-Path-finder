@@ -134,12 +134,15 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .footer { padding: 16px clamp(16px, 3vw, 40px) 24px; border-top: 1px solid var(--rule); background: var(--bone); color: var(--graphite); font-size: 11px; line-height: 1.6; }
 .footer p { max-width: 100ch; margin: 4px 0; text-wrap: pretty; }
 
-/* Staging single-panel lookup and dataset runbook. Production uses workbench. */
+/* Staging single-panel lookup, draft schemes, and dataset runbook. Production uses workbench. */
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .single-panel, .dataset-ops { max-width: 84ch; margin: 0 auto; }
-.panel-head { max-width: 72ch; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--rule); }
+.panel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; max-width: 84ch; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--rule); }
+.panel-title { min-width: 0; }
 .panel-head h1 { font-size: 25px; }
 .panel-head .lede { margin-top: 8px; }
+.scheme-switch { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--graphite); font-size: 11px; white-space: nowrap; }
+.scheme-switch select { padding: 4px 6px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); font-size: 11px; }
 
 .lookup-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
 .lookup-form #identifier { padding: 12px 14px; font-size: 15px; }
@@ -149,10 +152,32 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .dataset-picker .field { max-width: 280px; margin-top: 10px; }
 .dataset-picker select { font-size: 12px; }
 
-.single-panel > .status { margin-bottom: 10px; border-top: 1px solid var(--rule); }
-.single-panel > textarea { display: block; width: 100%; min-height: 46vh; padding: 14px; border: 1px solid var(--rule); background: var(--paper); }
+.output-block { position: relative; }
+.output-head { position: sticky; top: calc(var(--topbar-h) + 8px); z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; background: var(--bone); border-bottom: 1px solid var(--rule); }
+.output-head h2 { margin: 0; color: var(--graphite); font-size: 12px; text-transform: uppercase; letter-spacing: .09em; }
+.output-block .status { margin: 10px 0; }
+.output-block textarea { display: block; width: 100%; min-height: 46vh; padding: 14px; border: 1px solid var(--rule); background: var(--paper); }
 .lookup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .lookup-actions a { display: inline-flex; align-items: center; padding: 8px 2px; color: var(--vermilion); font-size: 12px; border-bottom: 1px solid currentColor; }
+
+/* Draft 2: dense filing ledger. */
+body[data-scheme="ledger"] .single-panel { max-width: 104ch; }
+body[data-scheme="ledger"] .panel-head { padding-bottom: 12px; border-bottom: 2px solid var(--ink); }
+body[data-scheme="ledger"] .panel-head h1 { font-size: 22px; text-transform: uppercase; letter-spacing: -.01em; }
+body[data-scheme="ledger"] .dataset-picker { display: flex; align-items: center; justify-content: space-between; }
+body[data-scheme="ledger"] .dataset-picker .field { margin-top: 0; }
+body[data-scheme="ledger"] .output-head { border-bottom: 2px solid var(--ink); }
+body[data-scheme="ledger"] .output-block .status { display: inline-block; margin: 12px 0; padding: 4px 10px; border: 1px solid var(--rule); border-left: 3px solid var(--vermilion); background: var(--paper); }
+body[data-scheme="ledger"] .output-block textarea { padding-left: 16px; border: 0; border-left: 1px solid var(--rule); background: transparent; }
+body[data-scheme="ledger"] .lookup-actions { padding-top: 10px; border-top: 1px solid var(--rule); }
+
+/* Draft 3: marginal notes beside the record. */
+body[data-scheme="margin"] .single-panel { max-width: 112ch; }
+body[data-scheme="margin"] .output-block { display: grid; grid-template-columns: 190px minmax(0, 1fr); column-gap: 32px; }
+body[data-scheme="margin"] .output-head { position: static; grid-column: 1; grid-row: 1; padding: 0; background: transparent; border-bottom: 0; }
+body[data-scheme="margin"] .output-block .status { grid-column: 1; grid-row: 2; margin: 0; padding-top: 8px; border-top: 1px solid var(--rule); }
+body[data-scheme="margin"] .output-block textarea { grid-column: 2; grid-row: 1 / span 2; min-height: 52vh; }
+body[data-scheme="margin"] .lookup-actions { grid-column: 1; grid-row: 3; flex-direction: column; align-items: flex-start; margin-top: 16px; }
 
 .dataset-ops .data-table-wrap { overflow-x: auto; }
 .dataset-ops .data-table { margin-bottom: 10px; }
@@ -170,7 +195,17 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .workbench { grid-template-columns: 1fr; }
   .query-rail { position: static; max-height: none; overflow: visible; border-right: 0; border-bottom: 1px solid var(--rule); }
   .result-sheet { padding: 16px; }
+  .panel-head { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .scheme-switch { margin-left: 0; }
+  .output-head { top: 64px; }
   .lookup-form { grid-template-columns: 1fr; }
+  body[data-scheme="ledger"] .dataset-picker { display: block; }
+  body[data-scheme="margin"] .output-block { grid-template-columns: 1fr; }
+  body[data-scheme="margin"] .output-head,
+  body[data-scheme="margin"] .output-block .status,
+  body[data-scheme="margin"] .output-block textarea,
+  body[data-scheme="margin"] .lookup-actions { grid-column: 1; grid-row: auto; }
+  body[data-scheme="margin"] .lookup-actions { flex-direction: row; flex-wrap: wrap; margin-top: 12px; }
 }
 
 @media (max-width: 620px) {
@@ -181,4 +216,5 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   .manual-grid { grid-template-columns: 1fr; }
   .lookup-form #identifier { font-size: 14px; }
   .panel-head h1 { font-size: 22px; }
+  .scheme-switch { white-space: normal; }
 }

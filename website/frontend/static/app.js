@@ -97,7 +97,11 @@
       row.className = 'clickable';
       fillRow(row, entry);
       row.addEventListener('click', () => {
-        window.location.href = `${base}/?q=${encodeURIComponent(entry.identifier)}`;
+        const params = new URLSearchParams({ q: entry.identifier });
+        if (body.dataset.scheme && body.dataset.scheme !== 'record') {
+          params.set('scheme', body.dataset.scheme);
+        }
+        window.location.href = `${base}/?${params}`;
       });
       tbody.appendChild(row);
     });
@@ -110,13 +114,48 @@
     if (field) field.value = value;
   }
 
+  async function copyTimeline(append) {
+    const resultText = $('#result-text');
+    if (!resultText || !resultText.value) return;
+    const status = $('#status-line');
+    try {
+      await navigator.clipboard.writeText(resultText.value);
+    } catch (_error) {
+      resultText.select();
+      document.execCommand('copy');
+    }
+    if (!status) return;
+    const message = 'Timeline copied to clipboard.';
+    if (!append) status.textContent = message;
+    else if (!status.textContent.includes(message)) {
+      status.textContent = `${status.textContent} ${message}`;
+    }
+  }
+
+  function setupSchemeSwitch() {
+    const select = $('#scheme-select');
+    select?.addEventListener('change', () => {
+      const scheme = select.value;
+      body.dataset.scheme = scheme;
+      const url = new URL(window.location.href);
+      url.searchParams.set('scheme', scheme);
+      window.history.replaceState(null, '', url);
+      $$('input[type="hidden"][name="scheme"]').forEach((field) => {
+        field.value = scheme;
+      });
+    });
+  }
+
   function setupMainPage() {
     const resultText = $('#result-text');
     const identifier = $('#identifier');
 
     if (resultText && resultText.value) {
       const entry = JSON.parse(body.dataset.historyEntry || 'null');
-      if (entry?.identifier !== 'UFAKE-0001') addHistory(entry);
+      if (entry?.identifier && entry.identifier !== 'UFAKE-0001') {
+        addHistory(entry);
+        void copyTimeline(true);
+      }
     }
     renderRecent();
 
@@ -124,18 +163,8 @@
     const preset = new URLSearchParams(window.location.search).get('q');
     if (preset && identifier) identifier.value = preset;
 
-    $('#copy-button')?.addEventListener('click', async () => {
-      if (!resultText || !resultText.value) return;
-      const status = $('#status-line');
-      try {
-        await navigator.clipboard.writeText(resultText.value);
-        if (status) status.textContent = 'Timeline copied to clipboard.';
-      } catch (_error) {
-        resultText.select();
-        document.execCommand('copy');
-        if (status) status.textContent = 'Timeline copied to clipboard.';
-      }
-    });
+    $('#copy-button')?.addEventListener('click', () => void copyTimeline(false));
+    $('#copy-inline-button')?.addEventListener('click', () => void copyTimeline(false));
 
     $('#export-button')?.addEventListener('click', () => {
       if (!resultText || !resultText.value || identifier?.value === 'UFAKE-0001') return;
@@ -243,4 +272,5 @@
   setupMainPage();
   setupBulkPage();
   setupHistoryPage();
+  setupSchemeSwitch();
 })();

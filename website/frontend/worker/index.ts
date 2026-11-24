@@ -13,6 +13,7 @@ import {
   indexPage,
   lookupPage,
   makeHistoryEntry,
+  schemeOf,
   type BulkResult,
   type IndexOptions,
   type Manifest,
@@ -169,9 +170,12 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
   const single = isStaging(url);
+  const scheme = schemeOf(url.searchParams.get("scheme"));
 
   if (path === "/health") return text("ok");
-  if (path === "/style.css" || path === "/app.js") return env.ASSETS.fetch(request);
+  if (path === "/style.css" || path === "/app.js" || path === "/favicon.ico") {
+    return env.ASSETS.fetch(request);
+  }
 
   let manifestValue: Manifest;
   try {
@@ -197,7 +201,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
         ...defaultResult(),
         error: null,
         enteredIdentifier: url.searchParams.get("q") || "",
-        enteredRelease: manifestValue.default_release,
+        enteredRelease: url.searchParams.get("release") || manifestValue.default_release,
+        scheme,
       }),
     );
   }
@@ -229,17 +234,20 @@ async function handle(request: Request, env: Env): Promise<Response> {
         updateMessage: null,
         enteredIdentifier: "",
         enteredRelease: manifestValue.default_release,
+        scheme,
       }),
     );
   }
 
-  if (request.method === "GET" && path === "/history") return html(historyPage(manifestValue));
-  if (request.method === "GET" && path === "/help") return html(helpPage(manifestValue));
+  if (request.method === "GET" && path === "/history") return html(historyPage(manifestValue, scheme));
+  if (request.method === "GET" && path === "/help") return html(helpPage(manifestValue, scheme));
   if (request.method === "GET" && path === "/datasets") {
-    return html(single ? datasetOpsPage(manifestValue) : datasetsPage(manifestValue));
+    return html(
+      single ? datasetOpsPage(manifestValue, null, scheme) : datasetsPage(manifestValue, scheme),
+    );
   }
   if (request.method === "GET" && path === "/bulk") {
-    return html(bulkPage(manifestValue, null, null, null, null));
+    return html(bulkPage(manifestValue, null, null, null, null, scheme));
   }
 
   if (request.method === "POST" && (path === "/search" || path === "/manual")) {
@@ -247,6 +255,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const form = await request.formData();
     const identifier = clean(form.get("identifier"));
     const releaseKey = clean(form.get("release")) || manifestValue.default_release;
+    const formScheme = schemeOf(form.get("scheme"));
     const overrides = parseOverrides(String(form.get("overrides") || "{}"));
     const cache = newShardCache();
     const found = await lookup(env, releaseKey, identifier, overrides, cache);
@@ -260,6 +269,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
           updateMessage: null,
           enteredIdentifier: identifier,
           enteredRelease: releaseKey,
+          scheme: formScheme,
         }),
       );
     }
@@ -274,6 +284,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         updateMessage: null,
         enteredIdentifier: identifier,
         enteredRelease: releaseKey,
+        scheme: formScheme,
       }),
     );
   }
@@ -297,9 +308,10 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && path === "/update-check") {
     const form = await request.formData();
     const view = clean(form.get("view"));
+    const formScheme = schemeOf(form.get("scheme"));
     const message = await updateMessage(manifestValue.app_version);
     if (single && view === "dataset") {
-      return html(datasetOpsPage(manifestValue, message));
+      return html(datasetOpsPage(manifestValue, message, formScheme));
     }
     return html(
       renderIndex({
@@ -309,6 +321,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         updateMessage: message,
         enteredIdentifier: clean(form.get("identifier")),
         enteredRelease: clean(form.get("release")) || manifestValue.default_release,
+        scheme: formScheme,
       }),
     );
   }
@@ -316,6 +329,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && path === "/bulk") {
     if (!rateLimit(request, "bulk", 8)) return text("Too many requests. Please wait a moment.", 429);
     const form = await request.formData();
+    const formScheme = schemeOf(form.get("scheme"));
     const file = form.get("file");
     let raw = "";
     if (file && typeof file !== "string" && file.size > 0) raw = await file.text();
@@ -326,7 +340,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       if (!raw.trim()) throw new Error("Upload a JSON file or paste the identifier list first.");
       items = parseIdentifiers(raw);
     } catch (error) {
-      return html(bulkPage(manifestValue, null, null, (error as Error).message, null));
+      return html(bulkPage(manifestValue, null, null, (error as Error).message, null, formScheme));
     }
 
     const cache = newShardCache();
@@ -370,6 +384,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         { found: foundCount, failed: results.length - foundCount, total: results.length },
         null,
         token,
+        formScheme,
       ),
     );
   }
