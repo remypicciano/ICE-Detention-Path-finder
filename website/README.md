@@ -9,7 +9,7 @@ Web edition of ICE Detention Pathway. It runs on **Cloudflare Workers Free + R2 
 
 The free Workers plan cannot run Python or DuckDB, so lookup data is prepared locally.
 
-1. `website/offline/sources.py` reads the root `data-sources.json`, the same URL file the desktop app uses for **Download / Update Data…**, and refreshes the three required Parquet files when they are missing or older than seven days.
+1. `website/offline/sources.py` reads the root `data-sources.json`, the same URL file the desktop app uses for **Download / Update Data…**, and refreshes the three required Parquet files when they are missing, older than seven days, or their URLs changed since the last build.
 2. `website/offline/build_index.py` streams each release through the unchanged desktop engine and writes gzipped JSON shards, one per 3-hex identifier prefix.
 3. `website/offline/upload_index.py` uploads those shards to R2.
 4. `website/frontend/worker/index.ts` hashes an identifier to one shard, reads that one object from R2, and renders the output with `website/frontend/worker/format.ts`.
@@ -39,6 +39,16 @@ Run Python commands from the project root with `python -m website.offline.<modul
 ## Staging and production views
 
 Staging uses a single ruled panel: identifier field, Search, status, and output. The release selector sits under a collapsed **Dataset** disclosure. Manual entries, copy, export, update check, demo, and bulk search remain in the same panel. Production keeps the original workbench. Both render identical pathway text.
+
+Staging also carries three draft schemes, selected with the **Staging scheme** control or `?scheme=`:
+
+| Scheme | Shape |
+| --- | --- |
+| `record` | Default ruled record sheet |
+| `ledger` | Dense filing ledger with a boxed status line |
+| `margin` | Pathway sheet with status and actions in the left margin |
+
+The scheme travels through search, manual entries, bulk runs, and update checks. It never changes rendered pathway text or reaches production. Search results are copied to the clipboard automatically; a sticky **Copy** control stays beside the output while scrolling. Favicon comes from the desktop app's existing ice-cube icon.
 
 `GET /datasets` shows the release table on production and the status plus rebuild runbook on staging. Retired staging prototype paths (`/guided`, `/workbench`, `/dataset`) redirect to the one-panel search or `/datasets`.
 
@@ -122,7 +132,7 @@ npx wrangler deploy --dry-run --config website/wrangler.toml --env=""
 
 ## Updating the dataset
 
-Update the URLs in `data-sources.json` if the publisher changes its links, then rebuild and upload to both buckets. Present files older than seven days refresh automatically; `--refresh-data` forces it now. R2 data is live immediately, so redeploy only when Worker code changed. The Datasets page shows each release's watermark, key count, and build time from `manifest.json`.
+Update the URLs in `data-sources.json` if the publisher changes its links, then rebuild and upload to both buckets. The next build detects the URL change and re-downloads that file even when the local copy is recent. Files older than seven days also refresh; `--refresh-data` forces all three. R2 data is live immediately, so redeploy only when Worker code changed. The Datasets page shows each release's watermark, key count, and build time from `manifest.json`.
 
 ## Routes
 
