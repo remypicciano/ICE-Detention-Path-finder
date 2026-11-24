@@ -81,8 +81,8 @@ Color is almost entirely ink on bone paper. Vermilion appears only on the active
 - Two-column workbench on production; one-panel lookup on staging.
 - Three staging styles share one lookup path: Record, Console, Dossier. They change surface and placement only.
 - Hairline rules and typographic weight replace panels, shadows, and badges in production and Record.
-- Identifier, status, and watermark are always in the same place.
-- Controls are square, compact, and system-font native.
+- Core fields keep one reading order; styles change their framing and placement.
+- Controls stay square and compact; Console uses mono, Record and Dossier use system sans.
 - Pathway output is monospaced, editable, and measured for reading.
 
 ## Colors

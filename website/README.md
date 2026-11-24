@@ -46,7 +46,7 @@ Staging uses one lookup panel with three switchable style studies: identifier fi
 | Console | `console` | Dark terminal: command prompt input, green status, mono output. |
 | Dossier | `dossier` | Warm case file: intake card beside a filed pathway sheet. |
 
-The **Staging style** selector swaps theme and workflow layout in place. Style survives navigation through `?style=`; it never changes lookup data, local history, or cached text. Production ignores the parameter.
+The **Staging style** selector swaps theme and workflow layout in place. It keeps the current identifier, release, and result. Style survives navigation through `?style=`; it never changes lookup data, local history, or cached text. Production ignores the parameter.
 
 Staging lookup is in place. `POST /api/lookup` returns the rendered pathway as JSON; the page updates status, pathway, history, and form state without reloading. Repeated queries reuse a browser session cache keyed by dataset build, release, identifier, and manual overrides. The Worker keeps recently read shards warm for five minutes. Production keeps full-page search.
 
