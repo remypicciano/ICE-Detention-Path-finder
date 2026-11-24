@@ -40,15 +40,9 @@ Run Python commands from the project root with `python -m website.offline.<modul
 
 Staging uses a single ruled panel: identifier field, Search, status, and output. The release selector sits under a collapsed **Dataset** disclosure. Manual entries, copy, export, update check, demo, and bulk search remain in the same panel. Production keeps the original workbench. Both render identical pathway text.
 
-Staging also carries three draft schemes, selected with the **Staging scheme** control or `?scheme=`:
+Staging lookup is in place. `POST /api/lookup` returns the rendered pathway as JSON; the page updates status, pathway, history, and form state without reloading. Repeated queries reuse a browser session cache keyed by dataset build, release, identifier, and manual overrides. The Worker keeps recently read shards warm for five minutes. Production keeps full-page search.
 
-| Scheme | Shape |
-| --- | --- |
-| `record` | Default ruled record sheet |
-| `ledger` | Dense filing ledger with a boxed status line |
-| `margin` | Pathway sheet with status and actions in the left margin |
-
-The scheme travels through search, manual entries, bulk runs, and update checks. It never changes rendered pathway text or reaches production. Search results are copied to the clipboard automatically; a sticky **Copy** control stays beside the output while scrolling. Favicon comes from the desktop app's existing ice-cube icon.
+Search results are copied to the clipboard automatically; a sticky **Copy** control stays beside the output while scrolling. Favicon comes from the desktop app's existing ice-cube icon.
 
 `GET /datasets` shows the release table on production and the status plus rebuild runbook on staging. Retired staging prototype paths (`/guided`, `/workbench`, `/dataset`) redirect to the one-panel search or `/datasets`.
 

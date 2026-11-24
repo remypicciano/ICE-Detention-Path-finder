@@ -128,7 +128,7 @@ One family carries navigation, labels, and headings; monospace carries identifie
 - Production desktop main: `minmax(280px, 320px)` query rail + `minmax(0, 1fr)` result field, separated by a vertical hairline.
 - Production query rail: identifier, release, search action, secondary actions, status, recent lookups. Sticky below the top bar.
 - Staging main: one `84ch` ruled panel. Identifier and Search sit above the status and editable pathway textarea. Release moves into a collapsed **Dataset** disclosure; other actions stay as a compact row under the output.
-- Staging draft schemes: `record` (default ruled sheet), `ledger` (dense filing ledger with boxed status), and `margin` (pathway sheet with notes in the left margin). A sticky output head keeps **Copy** reachable while reading. Schemes change layout only, never pathway text.
+- Staging search: the form posts to `POST /api/lookup`, then updates status, pathway, history, and form state in place. Repeated queries reuse a session cache keyed by dataset build, release, identifier, and manual overrides. A sticky output head keeps **Copy** reachable while reading. Production keeps full-page search.
 - Other pages: single ruled record column with the same head, section rules, and table language.
 - Small screens: one column; rail loses sticky position and vertical divider.
 
