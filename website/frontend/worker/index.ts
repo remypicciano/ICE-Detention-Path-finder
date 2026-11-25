@@ -14,6 +14,7 @@ import {
   lookupPage,
   makeHistoryEntry,
   styleOf,
+  tablePage,
   type BulkResult,
   type IndexOptions,
   type Manifest,
@@ -223,6 +224,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
   });
   const renderIndex = (options: IndexOptions): string =>
     single ? lookupPage(options) : indexPage(options);
+  const renderForView = (options: IndexOptions, view: string): string =>
+    single && view === "table" ? tablePage(options) : renderIndex(options);
 
   if (request.method === "GET" && path === "/") {
     return html(
@@ -232,6 +235,55 @@ async function handle(request: Request, env: Env): Promise<Response> {
         error: null,
         enteredIdentifier: url.searchParams.get("q") || "",
         enteredRelease: url.searchParams.get("release") || manifestValue.default_release,
+        style,
+      }),
+    );
+  }
+
+  if (request.method === "GET" && single && path === "/table") {
+    const query = url.searchParams.get("q") || "";
+    const releaseKey = url.searchParams.get("release") || manifestValue.default_release;
+    if (!query) {
+      return html(
+        tablePage({
+          manifest: manifestValue,
+          ...defaultResult(),
+          error: null,
+          enteredIdentifier: "",
+          enteredRelease: releaseKey,
+          style,
+        }),
+      );
+    }
+    const form = new FormData();
+    form.set("identifier", query);
+    form.set("release", releaseKey);
+    form.set("overrides", url.searchParams.get("overrides") || "{}");
+    const outcome = await lookupFromForm(request, env, manifestValue, form);
+    if (!outcome.ok) {
+      return html(
+        tablePage({
+          manifest: manifestValue,
+          result: null,
+          status: "Search failed.",
+          error: outcome.error,
+          updateMessage: null,
+          enteredIdentifier: query,
+          enteredRelease: releaseKey,
+          style,
+        }),
+        outcome.status,
+      );
+    }
+    return html(
+      tablePage({
+        manifest: manifestValue,
+        result: outcome.result,
+        status: outcome.result.status,
+        error: null,
+        updateMessage: null,
+        enteredIdentifier: outcome.identifier,
+        enteredRelease: outcome.releaseKey,
         style,
       }),
     );
@@ -269,15 +321,17 @@ async function handle(request: Request, env: Env): Promise<Response> {
     );
   }
 
-  if (request.method === "GET" && path === "/history") return html(historyPage(manifestValue, style));
-  if (request.method === "GET" && path === "/help") return html(helpPage(manifestValue, style));
+  if (request.method === "GET" && path === "/history") return html(historyPage(manifestValue, style, single));
+  if (request.method === "GET" && path === "/help") return html(helpPage(manifestValue, style, single));
   if (request.method === "GET" && path === "/datasets") {
     return html(
-      single ? datasetOpsPage(manifestValue, null, style) : datasetsPage(manifestValue, style),
+      single
+        ? datasetOpsPage(manifestValue, null, style, single)
+        : datasetsPage(manifestValue, style),
     );
   }
   if (request.method === "GET" && path === "/bulk") {
-    return html(bulkPage(manifestValue, null, null, null, null, style));
+    return html(bulkPage(manifestValue, null, null, null, null, style, single));
   }
 
   if (request.method === "POST" && path === "/api/lookup") {
@@ -315,33 +369,40 @@ async function handle(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && (path === "/search" || path === "/manual")) {
     const form = await request.formData();
     const formStyle = styleFor(form.get("style"));
+    const view = clean(form.get("view"));
     const outcome = await lookupFromForm(request, env, manifestValue, form);
     if (!outcome.ok) {
       return html(
-        renderIndex({
-          manifest: manifestValue,
-          result: null,
-          status: "Search failed.",
-          error: outcome.error,
-          updateMessage: null,
-          enteredIdentifier: clean(form.get("identifier")),
-          enteredRelease: clean(form.get("release")) || manifestValue.default_release,
-          style: formStyle,
-        }),
+        renderForView(
+          {
+            manifest: manifestValue,
+            result: null,
+            status: "Search failed.",
+            error: outcome.error,
+            updateMessage: null,
+            enteredIdentifier: clean(form.get("identifier")),
+            enteredRelease: clean(form.get("release")) || manifestValue.default_release,
+            style: formStyle,
+          },
+          view,
+        ),
         outcome.status,
       );
     }
     return html(
-      renderIndex({
-        manifest: manifestValue,
-        result: outcome.result,
-        status: outcome.result.status,
-        error: null,
-        updateMessage: null,
-        enteredIdentifier: outcome.identifier,
-        enteredRelease: outcome.releaseKey,
-        style: formStyle,
-      }),
+      renderForView(
+        {
+          manifest: manifestValue,
+          result: outcome.result,
+          status: outcome.result.status,
+          error: null,
+          updateMessage: null,
+          enteredIdentifier: outcome.identifier,
+          enteredRelease: outcome.releaseKey,
+          style: formStyle,
+        },
+        view,
+      ),
     );
   }
 
@@ -367,7 +428,21 @@ async function handle(request: Request, env: Env): Promise<Response> {
     const formStyle = styleFor(form.get("style"));
     const message = await updateMessage(manifestValue.app_version);
     if (single && view === "dataset") {
-      return html(datasetOpsPage(manifestValue, message, formStyle));
+      return html(datasetOpsPage(manifestValue, message, formStyle, single));
+    }
+    if (single && view === "table") {
+      return html(
+        tablePage({
+          manifest: manifestValue,
+          result: null,
+          status: "Update check complete.",
+          error: null,
+          updateMessage: message,
+          enteredIdentifier: clean(form.get("identifier")),
+          enteredRelease: clean(form.get("release")) || manifestValue.default_release,
+          style: formStyle,
+        }),
+      );
     }
     return html(
       renderIndex({
@@ -396,7 +471,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       if (!raw.trim()) throw new Error("Upload a JSON file or paste the identifier list first.");
       items = parseIdentifiers(raw);
     } catch (error) {
-      return html(bulkPage(manifestValue, null, null, (error as Error).message, null, formStyle));
+      return html(bulkPage(manifestValue, null, null, (error as Error).message, null, formStyle, single));
     }
 
     const cache = newShardCache();
@@ -441,6 +516,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
         null,
         token,
         formStyle,
+        single,
       ),
     );
   }

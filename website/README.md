@@ -38,17 +38,20 @@ Run Python commands from the project root with `python -m website.offline.<modul
 
 ## Staging and production views
 
-Staging uses one lookup panel with three switchable style studies: identifier field, Search, status, and output. The release selector sits under a collapsed **Dataset** disclosure. Manual entries, copy, export, update check, demo, and bulk search remain in the same panel. Production keeps the original workbench. All styles render identical pathway text.
+Staging uses one lookup panel with four switchable style studies and a **Table** tab. Search shows the identifier field, status, and editable pathway; Table shows the same lookup as stays and stints. The release selector sits under a collapsed **Dataset** disclosure. Manual entries, copy, export, update check, demo, and bulk search remain available. Production keeps the original workbench. All styles render identical pathway text.
 
 | Style | `?style=` | Direction |
 | --- | --- | --- |
-| Record | `record` (default) | Ruled bone-paper sheet: compact, square, typographic. |
-| Console | `console` | Dark terminal: command prompt input, green status, mono output. |
-| Dossier | `dossier` | Warm case file: intake card beside a filed pathway sheet. |
+| Record | `record` (fallback) | Ruled bone-paper sheet: compact, square, typographic. |
+| Manifest | `manifest` (lead dark) | Graphite-steel evidence wall: amber tags, drawer rail, logged table. |
+| Reading room | `reading` | Deep green-black room with one lit ivory document sheet and brass rules. |
+| Microfilm | `film` | Near-black viewer: cyan frame marks, mono figures, frame-index table. |
 
-The **Staging style** selector swaps theme and workflow layout in place. It keeps the current identifier, release, and result. Style survives navigation through `?style=`; it never changes lookup data, local history, or cached text. Production ignores the parameter.
+`console` and `dossier` still resolve to Manifest and Reading room so old links stay useful. The **Staging style** selector swaps theme and workflow layout in place on Search. It keeps the current identifier, release, and result. Style survives navigation through `?style=`; it never changes lookup data, local history, or cached text. Production ignores the parameter.
 
 Staging lookup is in place. `POST /api/lookup` returns the rendered pathway as JSON; the page updates status, pathway, history, and form state without reloading. Repeated queries reuse a browser session cache keyed by dataset build, release, identifier, and manual overrides. The Worker keeps recently read shards warm for five minutes. Production keeps full-page search.
+
+The staging-only `GET /table?q=…` route renders one section per stay: arrest, entry, release, and summary facts followed by a row per stint with stint ID, book-in, facility, and book-out. Edited fields keep their `[MANUAL_EDIT original=…]` tag; a missing book-out is `UNKNOWN`, not a claim of current detention. The Table tab is a normal server-rendered page; it does not replace or recache the in-place Search result.
 
 Search results are copied to the clipboard automatically; a sticky **Copy** control stays beside the output while scrolling. Favicon comes from the desktop app's existing ice-cube icon.
 
@@ -141,7 +144,8 @@ Update the URLs in `data-sources.json` if the publisher changes its links, then 
 | Route | Function |
 | --- | --- |
 | `GET /` | One-panel search on staging, workbench on production |
-| `GET /?style=console` | Staging style study; `record` or `dossier` also accepted |
+| `GET /?style=manifest` | Staging style study; `record`, `reading`, and `film` also accepted |
+| `GET /table?q=…` | Staging stays/stints table for the same lookup result |
 | `POST /api/lookup` | JSON lookup for in-place staging search |
 | `GET /demo` | Demo pathway |
 | `POST /search` | Identifier / stay / stint lookup |

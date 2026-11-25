@@ -187,7 +187,8 @@
 
   function applyStyle(style) {
     body.dataset.style = style;
-    $('meta[name="color-scheme"]')?.setAttribute('content', style === 'console' ? 'dark' : 'light');
+    $('meta[name="color-scheme"]')?.setAttribute('content', style === 'record' ? 'light' : 'dark');
+    $('.style-switch')?.setAttribute('action', window.location.pathname);
     $$('input[type="hidden"][name="style"]').forEach((field) => {
       field.value = style;
     });

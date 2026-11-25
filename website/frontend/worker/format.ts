@@ -132,6 +132,16 @@ function sanitizeOverrides(raw: unknown): Overrides {
 
 export { sanitizeOverrides };
 
+// Table cells show the same edited values the renderer would print.
+export function editedDisplayValue(
+  overrides: Overrides | null | undefined,
+  field: string,
+  datasetValue: string | null | undefined,
+  scope: number | null = null,
+): string {
+  return editedValue(overrides, field, datasetValue, scope);
+}
+
 export function parseOverrides(raw: string): Overrides {
   try {
     return sanitizeOverrides(JSON.parse(raw));

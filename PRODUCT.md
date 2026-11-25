@@ -32,9 +32,10 @@ Production at `https://bronx.remypicciano.me`; staging at `https://bronx-staging
 - History lives only in browser `localStorage` (`bronx.history.v1`).
 - Free-tier Cloudflare only: Workers Free + R2 Free. No paid Workers, containers, or public API.
 - Staging and production use separate Workers and R2 buckets.
-- Staging uses one lookup panel and keeps the Datasets tab; production keeps the two-column workbench.
-- Staging offers three visual/workflow studies — Record, Console, Dossier — switchable without changing lookup data, rendered pathway text, history, or cache keys.
-- Visible UI copy and rendered pathway text are in scope for preservation; redesign is visual only.
+- Staging uses one lookup panel, a stays/stints Table tab, and keeps the Datasets tab; production keeps the two-column workbench.
+- Staging offers four visual/workflow studies — Record fallback plus dark Manifest, Reading room, and Microfilm — switchable without changing lookup data, rendered pathway text, history, or cache keys.
+- Table view reads the same lookup result; it never replaces the rendered pathway or changes search cache keys.
+- Existing UI copy and rendered pathway text stay byte-identical; new Table labels name fields already present in the data.
 
 ## Brand Commitments
 

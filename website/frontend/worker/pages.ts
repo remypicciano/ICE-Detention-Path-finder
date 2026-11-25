@@ -1,6 +1,11 @@
 // Server-rendered HTML. No data access or request routing here.
 
-import { WEB_EDITABLE_FIELDS, type Overrides, type PathwayDoc } from "./format";
+import {
+  editedDisplayValue,
+  WEB_EDITABLE_FIELDS,
+  type Overrides,
+  type PathwayDoc,
+} from "./format";
 
 export type ReleaseInfo = {
   key: string;
@@ -19,11 +24,18 @@ export type Manifest = {
   releases: ReleaseInfo[];
 };
 
-export const STYLES = ["record", "console", "dossier"] as const;
+export const STYLES = ["record", "manifest", "reading", "film"] as const;
 export type Style = (typeof STYLES)[number];
 
+const STYLE_ALIASES: Record<string, Style> = {
+  console: "manifest",
+  dossier: "reading",
+};
+
 export function styleOf(value: unknown): Style {
-  return STYLES.includes(value as Style) ? (value as Style) : "record";
+  const key = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (STYLES.includes(key as Style)) return key as Style;
+  return STYLE_ALIASES[key] ?? "record";
 }
 
 export type Result = {
@@ -90,20 +102,21 @@ function releaseOptions(releases: ReleaseInfo[], selected: string): string {
 
 const STYLE_LABELS: Record<Style, string> = {
   record: "Record",
-  console: "Console",
-  dossier: "Dossier",
+  manifest: "Manifest",
+  reading: "Reading room",
+  film: "Microfilm",
 };
 
 function styleSuffix(style: Style): string {
   return style === "record" ? "" : `?style=${style}`;
 }
 
-function styleSwitch(style: Style, identifier: string, release: string): string {
+function styleSwitch(style: Style, identifier: string, release: string, action = "/"): string {
   const options = STYLES.map(
     (key) =>
       `<option value="${key}"${key === style ? " selected" : ""}>${STYLE_LABELS[key]}</option>`,
   ).join("");
-  return `<form class="style-switch" method="get" action="/">
+  return `<form class="style-switch" method="get" action="${attr(action)}">
   <label for="style-select">Staging style</label>
   <select id="style-select" name="style">${options}</select>
   <input type="hidden" name="q" value="${attr(identifier)}">
@@ -165,10 +178,12 @@ export function layout(
   result: Result | null = null,
   inlineSearch = false,
   style: Style = "record",
+  staging = false,
 ): string {
   const editable = JSON.stringify(WEB_EDITABLE_FIELDS);
   const nav = [
     ["Search", "/"],
+    ...(staging ? [["Table", "/table"]] : []),
     ["Bulk search", "/bulk"],
     ["History", "/history"],
     ["Datasets", "/datasets"],
@@ -187,7 +202,7 @@ export function layout(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="${style === "console" ? "dark" : "light"}">
+  <meta name="color-scheme" content="${style === "record" ? "light" : "dark"}">
   <title>${attr(title)} · Bronx</title>
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="stylesheet" href="/style.css">
@@ -351,7 +366,242 @@ export function lookupPage(options: IndexOptions): string {
 </section>
 
 ${overlayForms(overrides, style)}`;
-  return layout("Search", content, manifest, result, true, style);
+  return layout("Search", content, manifest, result, true, style, true);
+}
+
+type TableArrest = {
+  date_time: string | null;
+  date_only: string | null;
+  location: string | null;
+  landmark: string | null;
+  apprehension_state_fill_source: string | null;
+  _landmark_field?: string;
+};
+
+type TableRow = { book_in: string | null; facility: string | null; book_out: string | null };
+
+type TableStay = {
+  stay_id: string | null;
+  arrest: TableArrest | null;
+  entry_program: string | null;
+  entry_aor: string | null;
+  release_reason: string | null;
+  stint_ids: (string | null)[];
+  program_variance: string | null;
+  aor_variance: string | null;
+  start: string | null;
+  end: string | null;
+  summary: Record<string, string | null> | null;
+  rows: TableRow[];
+  _all_programs?: string[];
+  _all_aors?: string[];
+  _summary_fields?: Record<string, string | null> | null;
+};
+
+const TABLE_SUMMARY_FIELDS = [
+  ["classification", "classification"],
+  ["case_status", "case_status"],
+  ["threat_level", "threat_level"],
+  ["final_order", "final_order"],
+  ["final_order_date", "final_order_date"],
+  ["departed", "departed"],
+  ["charge", "final_charge"],
+] as const;
+
+function editedCell(value: string): string {
+  const raw = value || "";
+  const match = raw.match(/^(.*?) \[MANUAL_EDIT original=(.*)\]$/);
+  if (!match) return raw ? escapeHtml(raw) : '<span class="muted">—</span>';
+  const shown = match[1] ? escapeHtml(match[1]) : '<span class="muted">—</span>';
+  return `${shown} <span class="manual-tag">[MANUAL_EDIT original=${escapeHtml(match[2])}]</span>`;
+}
+
+function utcCell(value: string | null): string {
+  if (!value) return '<span class="unknown">UNKNOWN</span>';
+  const hasZone = value.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(value);
+  const when = Date.parse(hasZone ? value : `${value}Z`);
+  if (Number.isNaN(when)) return escapeHtml(value);
+  const shown = new Date(when).toISOString().slice(0, 19).replace("T", " ");
+  return `<time datetime="${attr(value)}">${shown} UTC</time>`;
+}
+
+function fact(label: string, value: string): string {
+  return `<div><dt>${escapeHtml(label)}</dt><dd>${value}</dd></div>`;
+}
+
+function stayFacts(stay: TableStay, number: number, overrides: Overrides): string {
+  const arrest = stay.arrest;
+  const arrestDate = arrest
+    ? arrest.date_time
+      ? utcCell(arrest.date_time)
+      : arrest.date_only
+        ? escapeHtml(arrest.date_only.slice(0, 10))
+        : "UNKNOWN ARREST DATE"
+    : escapeHtml("NO ARREST RECORD IN THIS DATASET");
+  const location = arrest
+    ? editedCell(
+        editedDisplayValue(overrides, "location", arrest.location || "UNKNOWN ARREST LOCATION", number),
+      )
+    : '<span class="muted">—</span>';
+  const landmark = arrest
+    ? editedCell(editedDisplayValue(overrides, "landmark", arrest.landmark, number))
+    : '<span class="muted">—</span>';
+  const provenance = arrest
+    ? editedCell(arrest.apprehension_state_fill_source || "")
+    : '<span class="muted">—</span>';
+  const values = stay._summary_fields ?? stay.summary ?? {};
+  const summary = TABLE_SUMMARY_FIELDS.filter(([, key]) => Boolean(values[key])).map(([label, key]) =>
+    fact(label, editedCell(editedDisplayValue(overrides, label, values[key], number))),
+  );
+  const programs = (stay._all_programs || []).filter((value) => value && value !== stay.entry_program);
+  const aors = (stay._all_aors || []).filter((value) => value && value !== stay.entry_aor);
+  return `<dl class="stay-facts">
+  ${fact("arrest", arrestDate)}
+  ${fact("location", location)}
+  ${fact("landmark", landmark)}
+  ${fact("provenance", provenance)}
+  ${fact("final_program", editedCell(editedDisplayValue(overrides, "final_program", stay.entry_program, number)))}
+  ${fact("book_in_aor", editedCell(editedDisplayValue(overrides, "book_in_aor", stay.entry_aor, number)))}
+  ${fact("release_reason", editedCell(stay.release_reason || ""))}
+  ${programs.length ? fact("stint programs", editedCell(programs.join("; "))) : ""}
+  ${aors.length ? fact("stint AORs", editedCell(aors.join("; "))) : ""}
+  ${summary.join("\n  ")}
+</dl>`;
+}
+
+function stintRows(stay: TableStay): string {
+  if (!stay.rows.length) {
+    return '<tr><td colspan="5">NO DETENTION RECORD IN THIS DATASET</td></tr>';
+  }
+  return stay.rows
+    .map(
+      (row, index) => {
+        const stintId = stay.stint_ids[index];
+        return `<tr>
+        <td>${index + 1}</td>
+        <td>${stintId ? `<code>${escapeHtml(stintId)}</code>` : '<span class="muted">—</span>'}</td>
+        <td>${utcCell(row.book_in)}</td>
+        <td>${escapeHtml(row.facility || "UNKNOWN DETENTION CENTER")}</td>
+        <td>${utcCell(row.book_out)}</td>
+      </tr>`;
+      },
+    )
+    .join("\n");
+}
+
+function staysTable(doc: PathwayDoc, overrides: Overrides): string {
+  const stays = doc.stays as TableStay[];
+  const focused = doc.focus_stay_id;
+  const sections = stays.map((stay, index) => {
+    const number = index + 1;
+    const isFocused = focused !== null && stay.stay_id === focused;
+    return `<section class="stay-block${isFocused ? " focused" : ""}">
+  <div class="stay-head">
+    <h2>STAY ${number} of ${stays.length}</h2>
+    <code>${escapeHtml(stay.stay_id || "UNKNOWN STAY ID")}</code>
+    ${isFocused ? '<span class="focus-mark">FOCUS</span>' : ""}
+  </div>
+  ${stayFacts(stay, number, overrides)}
+  <div class="data-table-wrap">
+    <table class="data-table stays-table">
+      <thead><tr><th>#</th><th>Stint ID</th><th>Book in (UTC)</th><th>Facility</th><th>Book out (UTC)</th></tr></thead>
+      <tbody>${stintRows(stay)}</tbody>
+    </table>
+  </div>
+</section>`;
+  });
+  return sections.length
+    ? sections.join("\n")
+    : '<p class="table-empty">NO DETENTION RECORD IN THIS DATASET</p>';
+}
+
+function looseArrestsTable(doc: PathwayDoc, overrides: Overrides): string {
+  const arrests = doc.arrests_without_stay as TableArrest[];
+  if (!arrests.length) return "";
+  const rows = arrests
+    .map((arrest, index) => {
+      const date = arrest.date_time
+        ? utcCell(arrest.date_time)
+        : arrest.date_only
+          ? escapeHtml(arrest.date_only.slice(0, 10))
+          : "UNKNOWN ARREST DATE";
+      return `<tr>
+        <td>${index + 1}</td>
+        <td>${date}</td>
+        <td>${editedCell(editedDisplayValue(overrides, "location", arrest.location || "UNKNOWN ARREST LOCATION"))}</td>
+        <td>${editedCell(editedDisplayValue(overrides, "landmark", arrest.landmark))}</td>
+        <td>${editedCell(arrest.apprehension_state_fill_source || "")}</td>
+      </tr>`;
+    })
+    .join("\n");
+  return `<section class="stay-block loose-arrests">
+  <div class="stay-head"><h2>Arrests without a stay</h2></div>
+  <div class="data-table-wrap">
+    <table class="data-table stays-table">
+      <thead><tr><th>#</th><th>Arrest date</th><th>Location</th><th>Landmark</th><th>Provenance</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+</section>`;
+}
+
+export function tablePage(options: IndexOptions): string {
+  const { manifest, result, status, style } = options;
+  const entered = enteredIdentifier(options);
+  const selected = options.enteredRelease || manifest.default_release;
+  const overrides = result ? result.overrides : {};
+  const head = `<div class="panel-head">
+    <div class="panel-title">
+      <h1>Reconstruct a recorded route through ICE custody.</h1>
+      <p class="lede">Paste a <code>unique_identifier</code>, <code>stay_ID</code>, or <code>stint_ID</code>. Every recorded stay is shown separately, in book-in order.</p>
+    </div>
+    ${styleSwitch(style, entered, selected, "/table")}
+  </div>`;
+  const form = `<form id="search-form" method="get" action="/table" class="lookup-form">
+    <input type="hidden" name="overrides" id="overrides-input" value='${attr(JSON.stringify(overrides))}'>
+    <input type="hidden" name="view" value="table">
+    <input type="hidden" name="style" value="${attr(style)}">
+    <label class="visually-hidden" for="identifier">Unique identifier</label>
+    <input id="identifier" name="q" type="text" maxlength="200" autocomplete="off" spellcheck="false"
+           placeholder="Paste an identifier…" value="${attr(entered)}">
+    <button type="submit" class="primary">Search</button>
+  </form>`;
+  const dataset = `<details class="dataset-picker">
+    <summary>Dataset</summary>
+    <div class="field">
+      <label for="release">Release</label>
+      <select id="release" name="release" form="search-form">${releaseOptions(manifest.releases, selected)}</select>
+    </div>
+  </details>`;
+  const actions = `<div class="lookup-actions">
+    <button type="button" id="copy-button" class="secondary">Copy to Clipboard</button>
+    <button type="button" id="manual-button" class="secondary">All manual entries…</button>
+    <button type="button" id="export-button" class="secondary">Export JSON…</button>
+    <button type="button" id="update-button" class="secondary">Check for Updates…</button>
+    <a href="/demo${styleSuffix(style)}">Load the demo pathway</a>
+    <a href="/bulk${styleSuffix(style)}">Bulk Search…</a>
+  </div>`;
+  const table = result
+    ? `${staysTable(result.doc, overrides)}${looseArrestsTable(result.doc, overrides)}`
+    : '<p class="table-empty">Paste an identifier and select Search.</p>';
+  const content = `<section class="single-panel table-panel staging-layout">
+  ${head}
+  <div class="notice-slot">${notices(options)}</div>
+  <div class="intake">
+    <p class="intake-label">Search</p>
+    ${form}
+    ${dataset}
+  </div>
+  <div class="table-block">
+    <p class="status" id="status-line" role="status">${escapeHtml(status)}</p>
+    <textarea id="result-text" hidden spellcheck="false">${escapeHtml(result?.text ?? "")}</textarea>
+    ${table}
+  </div>
+  ${actions}
+</section>
+
+${overlayForms(overrides, style, "table")}`;
+  return layout("Table", content, manifest, result, false, style, true);
 }
 
 export function bulkPage(
@@ -361,6 +611,7 @@ export function bulkPage(
   error: string | null,
   token: string | null,
   style: Style = "record",
+  staging = false,
 ): string {
   const alert = error ? `<div class="alert" role="alert">${escapeHtml(error)}</div>` : "";
   let resultPanel = "";
@@ -425,10 +676,10 @@ ${alert}
     <div><button type="submit" class="primary">Run bulk search</button></div>
   </form>
 </section>${resultPanel}`;
-  return layout("Bulk search", content, manifest, null, false, style);
+  return layout("Bulk search", content, manifest, null, false, style, staging);
 }
 
-export function historyPage(manifest: Manifest, style: Style = "record"): string {
+export function historyPage(manifest: Manifest, style: Style = "record", staging = false): string {
   const content = `<section class="hero compact">
   <h1>Every lookup in this browser.</h1>
   <p class="tagline">History</p>
@@ -445,10 +696,10 @@ export function historyPage(manifest: Manifest, style: Style = "record"): string
   </table>
   <p class="hint" id="history-empty" hidden>No lookups yet.</p>
 </section>`;
-  return layout("History", content, manifest, null, false, style);
+  return layout("History", content, manifest, null, false, style, staging);
 }
 
-export function helpPage(manifest: Manifest, style: Style = "record"): string {
+export function helpPage(manifest: Manifest, style: Style = "record", staging = false): string {
   const content = `<section class="hero compact">
   <h1>How to read a pathway.</h1>
   <p class="tagline">Help</p>
@@ -480,7 +731,7 @@ export function helpPage(manifest: Manifest, style: Style = "record"): string {
   <h2>Interpretation</h2>
   <p>This tool reconstructs recorded detention history, not a confirmed deportation outcome or a real-time location. Absence of a record is not evidence of absence in reality. The source data comes from ICE through FOIA requests, has known limitations, and may be revised. Treat pathways as investigative leads and verify consequential claims against primary records.</p>
 </section>`;
-  return layout("Help", content, manifest, null, false, style);
+  return layout("Help", content, manifest, null, false, style, staging);
 }
 
 export function datasetsPage(manifest: Manifest, style: Style = "record"): string {
@@ -509,6 +760,7 @@ export function datasetOpsPage(
   manifest: Manifest,
   updateMessage: string | null = null,
   style: Style = "record",
+  staging = false,
 ): string {
   const notice = updateMessage
     ? `<div class="notice" role="status"><pre>${escapeHtml(updateMessage)}</pre></div>`
@@ -573,7 +825,7 @@ ${notice}
     <button type="submit" class="secondary">Check for Updates…</button>
   </form>
 </section>`;
-  return layout("Datasets", content, manifest, null, false, style);
+  return layout("Datasets", content, manifest, null, false, style, staging);
 }
 
 export function makeHistoryEntry(doc: PathwayDoc, label: string | null = null): Result["historyEntry"] {
