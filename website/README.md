@@ -2,8 +2,8 @@
 
 Web edition of ICE Detention Pathway. It runs on **Cloudflare Workers Free + R2 Free**: no container, no paid plan, no always-on server, no public API.
 
-- Production: <https://bronx.remypicciano.me> — two-column workbench.
-- Staging: <https://bronx-staging.remypicciano.me> — one-panel lookup with the same **Datasets** tab.
+- Production: <https://bronx.remypicciano.me> — untouched two-column workbench.
+- Staging: <https://bronx-staging.remypicciano.me> — one centered bar that reveals a flat film ledger after lookup.
 
 ## How it works
 
@@ -38,22 +38,19 @@ Run Python commands from the project root with `python -m website.offline.<modul
 
 ## Staging and production views
 
-Staging uses one lookup panel with four switchable style studies and a **Table** tab. Search shows the identifier field, status, and editable pathway; Table shows the same lookup as stays and stints. The release selector sits under a collapsed **Dataset** disclosure. Manual entries, copy, export, update check, demo, and bulk search remain available. Production keeps the original workbench. All styles render identical pathway text.
+Staging opens on one centered bar on a near-black hairline grid. No header, navigation, Table tab, heading, release selector, pathway, or footer appears in that first view. The bar accepts a `unique_identifier`, `stay_ID`, or `stint_ID`; its placeholder names all three.
 
-| Style | `?style=` | Direction |
-| --- | --- | --- |
-| Record | `record` (fallback) | Ruled bone-paper sheet: compact, square, typographic. |
-| Manifest | `manifest` (lead dark) | Graphite-steel evidence wall: amber tags, drawer rail, logged table. |
-| Reading room | `reading` | Deep green-black room with one lit ivory document sheet and brass rules. |
-| Microfilm | `film` | Near-black viewer: cyan frame marks, mono figures, frame-index table. |
+A lookup reveals the ledger: top bar with **Search**, **Table**, Bulk search, History, Datasets, and Help; the editable pathway on hairline rules; a collapsed **Dataset** disclosure; and the compact action row. The reveal is stored in browser `localStorage` (`bronx.staging.revealed.v1`), and a return link with `?q=` or a server-rendered result also opens in the revealed state. Clearing browser data restores the single bar.
 
-`console` and `dossier` still resolve to Manifest and Reading room so old links stay useful. The **Staging style** selector swaps theme and workflow layout in place on Search. It keeps the current identifier, release, and result. Style survives navigation through `?style=`; it never changes lookup data, local history, or cached text. Production ignores the parameter.
+There is one staging direction: flat film ledger. Grey and near-black carry the field; cyan marks focus only. No style switcher, no bezel or glow, no cards, no rounded surfaces. Legacy `?style=` values and retired aliases resolve to the same direction; the parameter is no longer written into links or forms. Production ignores it and keeps the original Record workbench.
+
+Manual entries, copy, export, update check, demo, and bulk search remain available after reveal. `location` and `landmark` stay out of the manual-entry form.
 
 Staging lookup is in place. `POST /api/lookup` returns the rendered pathway as JSON; the page updates status, pathway, history, and form state without reloading. Repeated queries reuse a browser session cache keyed by dataset build, release, identifier, and manual overrides. The Worker keeps recently read shards warm for five minutes. Production keeps full-page search.
 
 The staging-only `GET /table?q=…` route renders one section per stay: arrest, entry, release, and summary facts followed by a row per stint with stint ID, book-in, facility, and book-out. Edited fields keep their `[MANUAL_EDIT original=…]` tag; a missing book-out is `UNKNOWN`, not a claim of current detention. The Table tab is a normal server-rendered page; it does not replace or recache the in-place Search result.
 
-Search results are copied to the clipboard automatically; a sticky **Copy** control stays beside the output while scrolling. Favicon comes from the desktop app's existing ice-cube icon.
+Search results are copied to the clipboard automatically; **Copy** also sits in the output head and the action row. Favicon comes from the desktop app's existing ice-cube icon.
 
 `GET /datasets` shows the release table on production and the status plus rebuild runbook on staging. Retired staging prototype paths (`/guided`, `/workbench`, `/dataset`) redirect to the one-panel search or `/datasets`.
 
@@ -89,8 +86,9 @@ python -m venv .venv
 # Smoke test: 500 identifiers per release.
 .venv/bin/python -m website.offline.build_index --limit 500 --out website/.build/r2
 
-# Full build. This is the one to deploy.
-.venv/bin/python -m website.offline.build_index --out website/.build/r2
+# Full build. This is the one to deploy; refresh first so a same-URL
+# publisher update cannot be missed by the local mtime check.
+.venv/bin/python -m website.offline.build_index --refresh-data --out website/.build/r2
 ```
 
 Useful flags:
@@ -108,16 +106,14 @@ Upload the same build to staging first, then production:
 ```bash
 .venv/bin/python -m website.offline.upload_index \
   --build-dir website/.build/r2 \
-  --bucket bronx-data-staging \
-  --skip-existing
+  --bucket bronx-data-staging
 
 .venv/bin/python -m website.offline.upload_index \
   --build-dir website/.build/r2 \
-  --bucket bronx-data \
-  --skip-existing
+  --bucket bronx-data
 ```
 
-`--skip-existing` lists keys first and uploads only what is missing, so an interrupted upload can resume without re-PUTting known objects. `--dry-run` lists work without writing. OAuth uploads default to 4 workers and 3.5 PUT/s; `--workers` and `--rate` adjust that. `Retry-After` is honored on HTTP 429.
+Always upload the full build when refreshing data. `--skip-existing` compares keys only, so it skips rebuilt shards and `manifest.json` under unchanged paths; use it only to resume a first-time seed. `--dry-run` lists work without writing. OAuth uploads default to 4 workers and 3.5 PUT/s; `--workers` and `--rate` adjust that. `Retry-After` is honored on HTTP 429.
 
 ## Deploy
 
@@ -137,14 +133,14 @@ npx wrangler deploy --dry-run --config website/wrangler.toml --env=""
 
 ## Updating the dataset
 
-Update the URLs in `data-sources.json` if the publisher changes its links, then rebuild and upload to both buckets. The next build detects the URL change and re-downloads that file even when the local copy is recent. Files older than seven days also refresh; `--refresh-data` forces all three. R2 data is live immediately, so redeploy only when Worker code changed. The Datasets page shows each release's watermark, key count, and build time from `manifest.json`.
+Update the URLs in `data-sources.json` if the publisher changes its links, then rebuild with `--refresh-data` and upload the full build to both buckets. The build also refreshes files when missing, older than seven days, or when a URL changes; `--refresh-data` removes the seven-day window because the publisher uses stable `*-latest.parquet` URLs that can change in place. Do not use `--skip-existing` for a data refresh. R2 data is live immediately, but the Worker caches the manifest and shards for five minutes, so redeploy if a refresh must be visible sooner. The Datasets page shows each release's watermark, key count, and build time from `manifest.json`.
 
 ## Routes
 
 | Route | Function |
 | --- | --- |
-| `GET /` | One-panel search on staging, workbench on production |
-| `GET /?style=manifest` | Staging style study; `record`, `reading`, and `film` also accepted |
+| `GET /` | Centered bar on staging; workbench on production |
+| `GET /?q=…` | Staging lookup opened in the revealed ledger state |
 | `GET /table?q=…` | Staging stays/stints table for the same lookup result |
 | `POST /api/lookup` | JSON lookup for in-place staging search |
 | `GET /demo` | Demo pathway |

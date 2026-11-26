@@ -24,12 +24,15 @@ export type Manifest = {
   releases: ReleaseInfo[];
 };
 
-export const STYLES = ["record", "manifest", "reading", "film"] as const;
+export const STYLES = ["record", "film"] as const;
 export type Style = (typeof STYLES)[number];
 
+// Old style links keep working, but staging now has one committed direction.
 const STYLE_ALIASES: Record<string, Style> = {
-  console: "manifest",
-  dossier: "reading",
+  console: "film",
+  dossier: "film",
+  manifest: "film",
+  reading: "film",
 };
 
 export function styleOf(value: unknown): Style {
@@ -73,6 +76,7 @@ export type IndexOptions = {
   enteredIdentifier: string;
   enteredRelease: string;
   style: Style;
+  revealed?: boolean;
 };
 
 export function escapeHtml(value: unknown): string {
@@ -100,31 +104,9 @@ function releaseOptions(releases: ReleaseInfo[], selected: string): string {
     .join("");
 }
 
-const STYLE_LABELS: Record<Style, string> = {
-  record: "Record",
-  manifest: "Manifest",
-  reading: "Reading room",
-  film: "Microfilm",
-};
-
-function styleSuffix(style: Style): string {
-  return style === "record" ? "" : `?style=${style}`;
-}
-
-function styleSwitch(style: Style, identifier: string, release: string, action = "/"): string {
-  const options = STYLES.map(
-    (key) =>
-      `<option value="${key}"${key === style ? " selected" : ""}>${STYLE_LABELS[key]}</option>`,
-  ).join("");
-  return `<form class="style-switch" method="get" action="${attr(action)}">
-  <label for="style-select">Staging style</label>
-  <select id="style-select" name="style">${options}</select>
-  <input type="hidden" name="q" value="${attr(identifier)}">
-  <input type="hidden" name="release" value="${attr(release)}">
-</form>`;
-}
-
-function overlayForms(overrides: Overrides, style: Style, view = "search"): string {
+// Staging has one committed direction. Older ?style= links resolve to film;
+// production always renders the record workbench.
+function overlayForms(overrides: Overrides, view = "search"): string {
   return `<dialog id="manual-dialog" class="modal">
   <form id="manual-form" method="post" action="/manual" class="stack">
     <h2>Manual entries</h2>
@@ -133,7 +115,6 @@ function overlayForms(overrides: Overrides, style: Style, view = "search"): stri
     <input type="hidden" name="release" id="manual-release">
     <input type="hidden" name="overrides" id="manual-overrides">
     <input type="hidden" name="view" value="${attr(view)}">
-    <input type="hidden" name="style" value="${attr(style)}">
     <div id="manual-fields" class="manual-fields"></div>
     <div class="modal-actions">
       <button type="button" id="manual-clear" class="secondary">Clear all</button>
@@ -153,7 +134,6 @@ function overlayForms(overrides: Overrides, style: Style, view = "search"): stri
   <input type="hidden" name="release" id="update-release">
   <input type="hidden" name="overrides" id="update-overrides">
   <input type="hidden" name="view" value="${attr(view)}">
-  <input type="hidden" name="style" value="${attr(style)}">
 </form>`;
 }
 
@@ -171,6 +151,16 @@ function enteredIdentifier(options: IndexOptions): string {
   return options.enteredIdentifier || (result && result.identifier !== "UFAKE-0001" ? result.identifier : "");
 }
 
+function tableQueryHref(identifier: string, release: string, overrides: Overrides): string {
+  if (!identifier) return "/table";
+  const params = new URLSearchParams();
+  params.set("q", identifier);
+  if (release) params.set("release", release);
+  const overrideText = JSON.stringify(overrides);
+  if (overrideText !== "{}") params.set("overrides", overrideText);
+  return `/table?${params.toString()}`;
+}
+
 export function layout(
   title: string,
   content: string,
@@ -179,6 +169,8 @@ export function layout(
   inlineSearch = false,
   style: Style = "record",
   staging = false,
+  revealed = true,
+  tableHref = "/table",
 ): string {
   const editable = JSON.stringify(WEB_EDITABLE_FIELDS);
   const nav = [
@@ -190,13 +182,19 @@ export function layout(
     ["Help", "/help"],
   ]
     .map(
-      ([label, href]) =>
-        `<a href="${href}${styleSuffix(style)}"${label === title ? ' aria-current="page"' : ""}>${label}</a>`,
+      ([label, href]) => {
+        const target = label === "Table" ? tableHref : href;
+        return `<a href="${attr(target)}"${label === "Table" ? ' data-staging-nav="table"' : ""}${label === title ? ' aria-current="page"' : ""}>${label}</a>`;
+      },
     )
     .join("");
   const resultAttrs = result
     ? `data-stay-count="${result.doc.totals.stays}" data-history-entry='${attr(JSON.stringify(result.historyEntry))}' data-overrides='${attr(JSON.stringify(result.overrides))}'`
     : 'data-stay-count="0" data-overrides=\'{}\'';
+  const earlyReveal =
+    staging && !revealed && style === "film"
+      ? `<script>try{if(localStorage.getItem("bronx.staging.revealed.v1")==="1")document.body.dataset.stage="work";}catch(e){}</script>`
+      : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -208,9 +206,10 @@ export function layout(
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
-<body data-base="" ${inlineSearch ? 'data-inline-search="1"' : ""} data-style="${attr(style)}" data-index-build="${attr(manifest.built_at)}" data-editable-fields='${attr(editable)}' ${resultAttrs}>
+<body data-base="" ${inlineSearch ? 'data-inline-search="1"' : ""} data-style="${attr(style)}" data-stage="${staging && !revealed ? "entry" : "work"}" data-index-build="${attr(manifest.built_at)}" data-editable-fields='${attr(editable)}' ${resultAttrs}>
+  ${earlyReveal}
   <header class="topbar">
-    <a class="brand" href="/${styleSuffix(style)}">
+    <a class="brand" href="/">
       <span class="brand-mark" aria-hidden="true">❄</span>
       <span>ICE Detention Pathway</span>
       <span class="version">v${attr(manifest.app_version)}</span>
@@ -303,31 +302,30 @@ ${notices(options)}
   </section>
 </div>
 
-${overlayForms(overrides, "record")}`;
+${overlayForms(overrides)}`;
   return layout("Search", content, manifest, result);
 }
 
-// Staging keeps one lookup workflow, with three distinct visual directions.
+// Staging opens from one bar; the ledger and navigation appear after lookup.
 export function lookupPage(options: IndexOptions): string {
   const { manifest, result, status, style } = options;
   const selected = options.enteredRelease || manifest.default_release;
   const entered = enteredIdentifier(options);
   const overrides = result ? result.overrides : {};
+  const tableHref = tableQueryHref(entered, selected, overrides);
   const head = `<div class="panel-head">
     <div class="panel-title">
       <h1>Reconstruct a recorded route through ICE custody.</h1>
       <p class="lede">Paste a <code>unique_identifier</code>, <code>stay_ID</code>, or <code>stint_ID</code>. Every recorded stay is shown separately, in book-in order.</p>
     </div>
-    ${styleSwitch(style, entered, selected)}
   </div>`;
   const noticeSlot = `<div class="notice-slot">${notices(options)}</div>`;
   const form = `<form id="search-form" method="post" action="/search" class="lookup-form">
     <input type="hidden" name="overrides" id="overrides-input" value='${attr(JSON.stringify(overrides))}'>
     <input type="hidden" name="view" value="search">
-    <input type="hidden" name="style" value="${attr(style)}">
-    <label class="visually-hidden" for="identifier">Unique identifier</label>
+    <label class="visually-hidden" for="identifier">Unique identifier, stay ID, or stint ID</label>
     <input id="identifier" name="identifier" type="text" maxlength="200" autocomplete="off" spellcheck="false"
-           placeholder="Paste an identifier…" value="${attr(entered)}">
+           placeholder="Identifier, stay ID, or stint ID…" value="${attr(entered)}">
     <button type="submit" class="primary">Search</button>
   </form>`;
   const dataset = `<details class="dataset-picker">
@@ -342,8 +340,8 @@ export function lookupPage(options: IndexOptions): string {
     <button type="button" id="manual-button" class="secondary">All manual entries…</button>
     <button type="button" id="export-button" class="secondary">Export JSON…</button>
     <button type="button" id="update-button" class="secondary">Check for Updates…</button>
-    <a href="/demo${styleSuffix(style)}">Load the demo pathway</a>
-    <a href="/bulk${styleSuffix(style)}">Bulk Search…</a>
+    <a href="/demo">Load the demo pathway</a>
+    <a href="/bulk">Bulk Search…</a>
   </div>`;
   const output = `<div class="output-block">
     <div class="output-head">
@@ -365,8 +363,8 @@ export function lookupPage(options: IndexOptions): string {
   ${actions}
 </section>
 
-${overlayForms(overrides, style)}`;
-  return layout("Search", content, manifest, result, true, style, true);
+${overlayForms(overrides, "search")}`;
+  return layout("Search", content, manifest, result, true, style, true, options.revealed !== false, tableHref);
 }
 
 type TableArrest = {
@@ -416,13 +414,9 @@ function editedCell(value: string): string {
   return `${shown} <span class="manual-tag">[MANUAL_EDIT original=${escapeHtml(match[2])}]</span>`;
 }
 
-function utcCell(value: string | null): string {
+function sourceDateCell(value: string | null): string {
   if (!value) return '<span class="unknown">UNKNOWN</span>';
-  const hasZone = value.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(value);
-  const when = Date.parse(hasZone ? value : `${value}Z`);
-  if (Number.isNaN(when)) return escapeHtml(value);
-  const shown = new Date(when).toISOString().slice(0, 19).replace("T", " ");
-  return `<time datetime="${attr(value)}">${shown} UTC</time>`;
+  return `<time datetime="${attr(value)}">${escapeHtml(value)}</time>`;
 }
 
 function fact(label: string, value: string): string {
@@ -433,9 +427,9 @@ function stayFacts(stay: TableStay, number: number, overrides: Overrides): strin
   const arrest = stay.arrest;
   const arrestDate = arrest
     ? arrest.date_time
-      ? utcCell(arrest.date_time)
+      ? sourceDateCell(arrest.date_time)
       : arrest.date_only
-        ? escapeHtml(arrest.date_only.slice(0, 10))
+        ? escapeHtml(arrest.date_only)
         : "UNKNOWN ARREST DATE"
     : escapeHtml("NO ARREST RECORD IN THIS DATASET");
   const location = arrest
@@ -480,9 +474,9 @@ function stintRows(stay: TableStay): string {
         return `<tr>
         <td>${index + 1}</td>
         <td>${stintId ? `<code>${escapeHtml(stintId)}</code>` : '<span class="muted">—</span>'}</td>
-        <td>${utcCell(row.book_in)}</td>
+        <td>${sourceDateCell(row.book_in)}</td>
         <td>${escapeHtml(row.facility || "UNKNOWN DETENTION CENTER")}</td>
-        <td>${utcCell(row.book_out)}</td>
+        <td>${sourceDateCell(row.book_out)}</td>
       </tr>`;
       },
     )
@@ -504,7 +498,7 @@ function staysTable(doc: PathwayDoc, overrides: Overrides): string {
   ${stayFacts(stay, number, overrides)}
   <div class="data-table-wrap">
     <table class="data-table stays-table">
-      <thead><tr><th>#</th><th>Stint ID</th><th>Book in (UTC)</th><th>Facility</th><th>Book out (UTC)</th></tr></thead>
+      <thead><tr><th>#</th><th>Stint ID</th><th>Book in</th><th>Facility</th><th>Book out</th></tr></thead>
       <tbody>${stintRows(stay)}</tbody>
     </table>
   </div>
@@ -521,9 +515,9 @@ function looseArrestsTable(doc: PathwayDoc, overrides: Overrides): string {
   const rows = arrests
     .map((arrest, index) => {
       const date = arrest.date_time
-        ? utcCell(arrest.date_time)
+        ? sourceDateCell(arrest.date_time)
         : arrest.date_only
-          ? escapeHtml(arrest.date_only.slice(0, 10))
+          ? escapeHtml(arrest.date_only)
           : "UNKNOWN ARREST DATE";
       return `<tr>
         <td>${index + 1}</td>
@@ -550,18 +544,17 @@ export function tablePage(options: IndexOptions): string {
   const entered = enteredIdentifier(options);
   const selected = options.enteredRelease || manifest.default_release;
   const overrides = result ? result.overrides : {};
+  const tableHref = tableQueryHref(entered, selected, overrides);
   const head = `<div class="panel-head">
     <div class="panel-title">
       <h1>Reconstruct a recorded route through ICE custody.</h1>
       <p class="lede">Paste a <code>unique_identifier</code>, <code>stay_ID</code>, or <code>stint_ID</code>. Every recorded stay is shown separately, in book-in order.</p>
     </div>
-    ${styleSwitch(style, entered, selected, "/table")}
   </div>`;
   const form = `<form id="search-form" method="get" action="/table" class="lookup-form">
     <input type="hidden" name="overrides" id="overrides-input" value='${attr(JSON.stringify(overrides))}'>
     <input type="hidden" name="view" value="table">
-    <input type="hidden" name="style" value="${attr(style)}">
-    <label class="visually-hidden" for="identifier">Unique identifier</label>
+    <label class="visually-hidden" for="identifier">Unique identifier, stay ID, or stint ID</label>
     <input id="identifier" name="q" type="text" maxlength="200" autocomplete="off" spellcheck="false"
            placeholder="Paste an identifier…" value="${attr(entered)}">
     <button type="submit" class="primary">Search</button>
@@ -578,8 +571,8 @@ export function tablePage(options: IndexOptions): string {
     <button type="button" id="manual-button" class="secondary">All manual entries…</button>
     <button type="button" id="export-button" class="secondary">Export JSON…</button>
     <button type="button" id="update-button" class="secondary">Check for Updates…</button>
-    <a href="/demo${styleSuffix(style)}">Load the demo pathway</a>
-    <a href="/bulk${styleSuffix(style)}">Bulk Search…</a>
+    <a href="/demo">Load the demo pathway</a>
+    <a href="/bulk">Bulk Search…</a>
   </div>`;
   const table = result
     ? `${staysTable(result.doc, overrides)}${looseArrestsTable(result.doc, overrides)}`
@@ -600,8 +593,8 @@ export function tablePage(options: IndexOptions): string {
   ${actions}
 </section>
 
-${overlayForms(overrides, style, "table")}`;
-  return layout("Table", content, manifest, result, false, style, true);
+${overlayForms(overrides, "table")}`;
+  return layout("Table", content, manifest, result, false, style, true, true, tableHref);
 }
 
 export function bulkPage(
@@ -657,7 +650,6 @@ ${alert}
 
 <section class="panel">
   <form method="post" action="/bulk" enctype="multipart/form-data" class="stack">
-    <input type="hidden" name="style" value="${attr(style)}">
     <div class="field-row">
       <div class="field grow">
         <label for="bulk-file">Identifiers JSON</label>
@@ -799,29 +791,27 @@ ${notice}
   <section class="ops-block">
     <h2>Refresh the data</h2>
     <ol>
-      <li>The build reads <code>data-sources.json</code> and downloads a Parquet file when it is missing, older than seven days, or its URL changed since the last build. Use <code>--refresh-data</code> to force a fresh download of all three.</li>
+      <li>The build reads <code>data-sources.json</code> and downloads a Parquet file when it is missing, older than seven days, or its URL changed since the last build. The publisher uses stable <code>*-latest.parquet</code> URLs, so use <code>--refresh-data</code> to force fresh bytes.</li>
       <li>Rebuild the index:
-        <pre>.venv/bin/python -m website.offline.build_index --out website/.build/r2</pre>
+        <pre>.venv/bin/python -m website.offline.build_index --refresh-data --out website/.build/r2</pre>
       </li>
-      <li>Upload to staging first:
+      <li>Upload the full build to staging first. Do not use <code>--skip-existing</code> for a data refresh; it compares keys only and skips rebuilt shards and the manifest:
         <pre>.venv/bin/python -m website.offline.upload_index \\
   --build-dir website/.build/r2 \\
-  --bucket bronx-data-staging \\
-  --skip-existing</pre>
+  --bucket bronx-data-staging</pre>
       </li>
       <li>Deploy staging:
         <pre>npx wrangler deploy --config website/wrangler.toml --env staging</pre>
       </li>
       <li>Repeat the upload with <code>--bucket bronx-data</code>, then deploy with <code>--env=""</code> when ready.</li>
     </ol>
-    <p class="hint"><code>--skip-existing</code> makes an interrupted upload resumable. The Worker caches the manifest for five minutes; redeploy to clear it sooner.</p>
+    <p class="hint">Use <code>--skip-existing</code> only to resume a first-time seed; never for a data refresh. The Worker caches the manifest for five minutes; redeploy to clear it sooner.</p>
   </section>
 
   <form method="post" action="/update-check" class="ops-update">
     <input type="hidden" name="identifier" value="">
     <input type="hidden" name="release" value="${attr(manifest.default_release)}">
     <input type="hidden" name="view" value="dataset">
-    <input type="hidden" name="style" value="${attr(style)}">
     <button type="submit" class="secondary">Check for Updates…</button>
   </form>
 </section>`;

@@ -1,21 +1,41 @@
 ---
 name: Bronx — ICE Detention Pathway
-description: A compact desktop workbench for reconstructing recorded ICE detention pathways.
+description: Production is a ruled record workbench; staging is a flat film ledger that opens from one search bar.
 colors:
-  bone: "#e8ebe9"
-  paper: "#f8f9f7"
-  ink: "#171a18"
-  graphite: "#4b504d"
-  rule: "#c3c8c4"
-  vermilion: "#b23a22"
-  vermilion-deep: "#8e2d19"
+  ground: "#0b0e10"
+  panel: "#111619"
+  ink: "#dbe3e4"
+  muted: "#98a4a7"
+  rule: "#2a3235"
+  focus: "#7be7ef"
+  selection: "#234348"
+  selection-ink: "#f2ffff"
+  production-bone: "#e8ebe9"
+  production-paper: "#f8f9f7"
+  production-ink: "#171a18"
+  production-graphite: "#4b504d"
+  production-rule: "#c3c8c4"
+  production-vermilion: "#b23a22"
+  production-vermilion-deep: "#8e2d19"
+  production-selection: "#d7ded9"
+  production-placeholder: "#666c68"
 typography:
+  scale:
+    micro: "10px"
+    tiny: "12px"
+    small: "13px"
+    body: "14px"
+    medium: "15px"
+    modal: "18px"
+    display: "20px"
+    title: "24px"
+    head: "25px"
   display:
     fontFamily: "System UI, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
     fontSize: "1.25rem"
     fontWeight: 600
     lineHeight: 1.2
-    letterSpacing: "-0.02em"
+    letterSpacing: "-0.01em"
   body:
     fontFamily: "System UI, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
     fontSize: "0.875rem"
@@ -27,12 +47,12 @@ typography:
     fontSize: "0.6875rem"
     fontWeight: 700
     lineHeight: 1.2
-    letterSpacing: "0.09em"
+    letterSpacing: "0.1em"
   mono:
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
     fontSize: "0.8125rem"
     fontWeight: 400
-    lineHeight: 1.6
+    lineHeight: 1.7
     letterSpacing: "0"
 rounded:
   none: "0"
@@ -44,142 +64,109 @@ spacing:
   lg: "24px"
   xl: "32px"
 components:
-  button-primary:
-    backgroundColor: "{colors.ink}"
-    textColor: "{colors.paper}"
-    rounded: "{rounded.xs}"
-    padding: "8px 14px"
-  button-secondary:
-    backgroundColor: "{colors.paper}"
+  search-bar:
+    backgroundColor: "{colors.panel}"
     textColor: "{colors.ink}"
-    rounded: "{rounded.xs}"
-    padding: "8px 12px"
-  input:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.xs}"
-    padding: "8px 10px"
-  nav-active:
-    backgroundColor: "{colors.bone}"
-    textColor: "{colors.vermilion}"
+    borderColor: "{colors.rule}"
+    focusBorderColor: "{colors.focus}"
     rounded: "{rounded.none}"
-    padding: "4px 0"
+    padding: "14px 16px"
+  button:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink}"
+    borderColor: "{colors.rule}"
+    rounded: "{rounded.none}"
+    padding: "8px 12px"
+  nav-active:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.none}"
+    underlineColor: "{colors.muted}"
 ---
 
 <!--
-THESIS: Staging is a dark evidence workspace, not a light form dressed up at night. It refuses the calm cream document and the generic neon terminal.
-OWN-WORLD: Graphite steel, amber inventory tags, deep green with one lit ivory sheet, and near-black film with cyan frame marks. Hairline seams, stencil labels, mono figures.
-STORY: A researcher enters an identifier, sees the recorded pathway, and opens the stays/stints table to check each placement without changing the text.
-FIRST VIEWPORT: Top strip, style switch in the head, identifier rail, status, then either the editable pathway or the tabular stay log. Table tab sits beside Search.
-FORM: Chain-of-custody manifest wall, position 7 of the grounded list, seed 4c957886. Reading room and microfilm are the kept challengers.
+THESIS: Staging is one centered bar on a flat field. Navigation and the Table tab are withheld until a lookup; the interface refuses the hero, card stack, and style switcher it replaces.
+OWN-WORLD: Near-black ground, grey hairline grid, one-pixel rules, mono figures, cyan only for focus. No bezel, glow, shadow, pill, or rounded surface.
+STORY: A visitor pastes an identifier, stay ID, or stint ID. The recorded pathway opens in place; Table stands beside Search as the same lookup's stay and stint log.
+FIRST VIEWPORT: A 720px bar centered on the grid. No header, nav, heading, footer, or tabs. Search reveals the top bar, pathway, release disclosure, and actions.
+FORM: Flat film ledger, user-committed direction. Seed not used; the brief pinned the world.
 -->
 
 # Design System: Bronx
 
 ## Overview
 
-**Creative North Star: "Central Rail Record."**
+**Creative North Star: "Flat Film Ledger."**
 
-A desktop-first lookup surface built from rules, columns, and typographic hierarchy. Production is the original ruled record sheet: a narrow identifier rail on the left and a paragraph-width pathway field on the right. Staging is a dark evidence workspace with one lookup panel, three style studies, and a Table tab that shows the recorded stays and stints behind the same pathway text. No style changes data, copy, history, or cache behavior.
+Staging strips the lookup to one centered search bar on a ruled near-black field. The first view has no navigation, no heading, no cards, and no decorative chrome. After the first lookup the field becomes a ledger: a quiet top bar, the editable pathway on hairline rules, a collapsed release selector, a compact action row, and a **Table** tab that shows the stays and stints behind the same result.
 
-Record keeps bone paper and vermilion provenance marks. The three dark studies use material from research rooms: a chain-of-custody manifest wall, a night reading lamp, and a microfilm frame index. Color marks state and provenance, not decoration. The interface stays quiet while the pathway text carries the weight of the work.
+Production is untouched. It remains the original two-column ruled record workbench in bone paper and vermilion, with Record as its only visual language. The two environments share HTML and text semantics, not a visual identity.
 
 **Key Characteristics:**
 
-- Two-column workbench on production; one-panel lookup and Table tab on staging.
-- Four staging styles share one lookup path: Record fallback plus Manifest, Reading room, and Microfilm.
-- Hairline rules and typographic weight replace panels, shadows, and badges in production and Record.
-- Core fields keep one reading order; dark styles change framing, density, and placement.
-- Controls stay square and compact; mono carries identifiers, dates, facilities, and pathway text.
-- Table cells show source values with `[MANUAL_EDIT original=…]` still visible; missing book-out stays `UNKNOWN`.
+- First staging view: one 720px bar, centered, with identifier / `stay_ID` / `stint_ID` as its only visible copy.
+- Reveal rule: a lookup, a `?q=` return link, or a prior browser reveal flag shows the top bar, Table tab, dataset disclosure, pathway, and actions.
+- One committed staging direction; no style switch and no `?style=` propagation in links or forms.
+- Near-black and grey with a sparse hairline grid; cyan appears only on keyboard focus, focus-within, and the data focus marker.
+- Mono carries identifiers, dates, facilities, watermarks, and pathway text; system sans carries labels and controls.
+- Every staging surface keeps the same rules: 1px borders, zero radius, no shadows, no glows, no bezel.
+- Table cells preserve source values and `[MANUAL_EDIT original=…]` tags; a missing book-out stays `UNKNOWN`.
 
 ## Colors
 
-Bone ground, paper fields, iron-black type, and a single vermilion provenance mark.
+### Staging — flat film ledger
 
-### Primary
+- **Ground** (#0b0e10): page field with a 72px hairline grid at low contrast.
+- **Panel** (#111619): search bar, inputs, dialog, and non-text controls.
+- **Ink** (#dbe3e4): pathway, headings, and primary text.
+- **Muted** (#98a4a7): labels, hints, status, inactive nav, and table metadata.
+- **Rule** (#2a3235): every divider, border, and table row.
+- **Focus** (#7be7ef): keyboard focus, search-bar focus-within, and the focused stay marker only.
 
-- **Vermilion** (#b23a22): Active nav item, watermark marker, and error state only. Never used for decoration or large fills.
+### Production — record fallback
 
-### Neutral
-
-- **Bone** (#f3efe6): Page ground and rail ground.
-- **Paper** (#fbf9f3): Inputs, textarea, dialog, and raised reading surface.
-- **Iron Black** (#171714): Headings, primary buttons, and body text.
-- **Graphite** (#4d4b44): Secondary text, labels, and table metadata.
-- **Rule** (#c9c2b4): Hairline borders, dividers, and table rows.
-
-### Named Rules
-
-**The Vermilion Rule.** Vermilion marks where the user is or where the data came from. If it is not active state or provenance, it does not get vermilion.
-
-**The No-Card Rule.** In production and Record, groups are made with rules, spacing, and alignment. No rounded card stacks, gradients, or drop shadows. Manifest uses steel drawers, Reading room uses one lit sheet, Microfilm uses a framed viewer; none uses generic floating cards.
+Bone (#e8ebe9), paper (#f8f9f7), ink (#171a18), graphite (#4b504d), rule (#c3c8c4), and vermilion (#b23a22) remain the production workbench tokens. Vermilion marks active navigation, provenance, and errors there.
 
 ## Typography
 
-**Display Font:** System UI
-**Body Font:** System UI
-**Mono Font:** ui-monospace
+**Fonts:** system sans for interface language; `ui-monospace` for data. No display face, no italic tagline on staging, no fluid type.
 
-One family carries navigation, labels, and headings; monospace carries identifiers and pathway text. Character: clerical, precise, unshowy. Weight and rule position do the hierarchy work.
-
-### Hierarchy
-
-- **Display** (600, 1.25rem, 1.2): Page title in the record head.
-- **Title** (600, 1rem, 1.3): Section headings and dialog title.
-- **Label** (700, 0.6875rem, 1.2, uppercase): Field labels and table headers.
-- **Body** (400, 0.875rem, 1.55): Explanatory copy and table cells; 65–75ch measure.
-- **Mono** (400, 0.8125rem, 1.6): Identifier input, result textarea, watermarks, and code.
+- **Display:** 600, 1.25rem, 1.2, tracking -0.01em.
+- **Body:** 400, 0.875rem, 1.55, 65–75ch measure.
+- **Label:** 700, 0.6875rem, uppercase, 0.1em tracking.
+- **Mono:** 400, 0.8125rem, 1.7 for identifiers and records.
 
 ## Layout
 
-- Top bar: 52px fixed strip with brand, version, and navigation. Staging adds **Table** beside **Search**; **Datasets** stays visible in both environments.
-- Production desktop main: `minmax(280px, 320px)` query rail + `minmax(0, 1fr)` result field, separated by a vertical hairline.
-- Production query rail: identifier, release, search action, secondary actions, status, recent lookups. Sticky below the top bar.
-- Staging Search: one panel. Identifier and Search sit above status and editable pathway textarea. Release moves into a collapsed **Dataset** disclosure; other actions stay as a compact row under the output.
-- Staging Table: one panel. Identifier and Search sit above a stay-by-stay table; each stay carries arrest, entry, release, and summary facts, then one row per stint with stint ID, book-in, facility, and book-out. Arrests without a stay get their own table.
-- Staging search stays in place through `POST /api/lookup`. Repeated queries reuse a session cache keyed by dataset build, release, identifier, and manual overrides. A sticky output head keeps **Copy** reachable while reading. Production keeps full-page search.
-- Other pages: single record column with the same head, section rules, and table language.
-- Small screens: one column; rails lose sticky position and vertical dividers.
+**Entry state.** `body[data-style="film"][data-stage="entry"]` hides the top bar, footer, panel head, notices, release disclosure, pathway, and actions. The shell centers a single `single-panel` block; the form is the only visible content.
 
-## Staging style studies
+**Work state.** Search keeps the same bar at the top of a 108ch column. Order: head, notices, bar, release disclosure, pathway status and textarea, action row. Table replaces the pathway block with stay sections and keeps the same bar above them. Bulk, History, Datasets, Help, and Table render with the top bar visible.
 
-Switch with the **Staging style** control or `?style=record|manifest|reading|film`. Legacy `console` maps to Manifest and `dossier` maps to Reading room. The change is visual only: same lookup path, same cache key, same JSON response, same pathway text.
+**Reveal rule.** A successful or attempted lookup sets `data-stage="work"` and stores `bronx.staging.revealed.v1` in `localStorage`. A server render with a result or `?q=` starts in work state. A later visit to bare `/` restores work state from the flag; clearing browser data returns to the single bar.
 
-- **Record** — fallback bone ground, paper field, vermilion provenance mark. Head, form, dataset disclosure, status, output, then actions. The baseline ruled sheet.
-- **Manifest** — lead dark direction. Graphite-steel ground, amber inventory tags, stencil labels, hairline seams. Intake is a drawer rail; output and table are logged sheets. State reads like a chain-of-custody manifest.
-- **Reading room** — deep green-black ground with one warm ivory illuminated sheet, brass rules, and a restrained serif display. The pathway table sits in the lit document margin; the rest of the page stays dark.
-- **Microfilm** — near-black viewer bezel, cool grey seams, cyan frame marks, mono figures. The output reads as a frame and the table as a frame index, with `FRAME` and `SYS` markers only as framing.
-
-The sticky output head and auto-copy stay in all four. Record uses light color scheme; the three dark studies use dark.
-
-## Elevation & Depth
-
-Production and Record stay flat; depth comes from paper-on-bone contrast and 1px rules. Manifest uses a single offset shadow on steel panels, Reading room uses one soft lamp shadow on the lit sheet, and Microfilm stays framed by seams only. Dialogs use a single hard shadow with offset; no ambient color halos.
-
-## Shapes
-
-- Radius: 2px maximum on controls and dialogs; 0 on table cells, rails, and rules.
-- Borders: 1px solid rule; no double borders, no colored focus glows.
-- Focus: 2px foreground outline with 2px offset; amber in Manifest, brass in Reading room, cyan in Microfilm.
+**Responsive.** The bar stacks its button below the input under 620px but stays one outlined control. Tables scroll horizontally. No typography scales with viewport width.
 
 ## Components
 
-- **Primary button:** Iron-black fill, paper text, square corners, compact padding.
-- **Secondary button:** Paper fill, iron-black text, rule border; hover darkens text and border only.
-- **Input / select / textarea:** Paper fill, rule border, mono for identifier and pathway, system sans elsewhere.
-- **Status line:** Thin rule above and below; graphite text, vermilion left mark on error.
-- **Navigation:** Flat text links; active page marked vermilion with a 2px underline, no pill.
-- **Table:** Hairline row rules, uppercase label headers, no zebra fill; mono figures. Stays table carries one row per stint and keeps `[MANUAL_EDIT original=…]` visible in edited facts.
-- **Dialog:** Paper sheet with hard offset shadow; field groups separated by top rules.
+- **Search bar:** one 1px outline; transparent input; hairline-separated Search button; cyan border only while focus is inside.
+- **Buttons:** transparent, square, grey rules; hover brightens text or border, never fills with cyan.
+- **Navigation:** flat text, grey inactive, ink active with a 2px grey underline. Table link is hidden in entry state.
+- **Status:** plain mono text on the field; no colored rule or alert fill.
+- **Pathway:** borderless textarea bounded by two hairlines; no bezel, shadow, or raised sheet.
+- **Dataset disclosure:** small summary with a 280px release select; hidden until work state.
+- **Table:** hairline rows; stay headings and figures in mono; focused stay gets a cyan top rule and `FOCUS` tag.
+- **Dialog:** square panel on a flat dark backdrop; no offset shadow or halo.
+
+## Motion
+
+No entrance choreography. Only state feedback: focus border and standard control hover changes within 150ms. Lookup updates in place through `POST /api/lookup`; no page-load sequence.
 
 ## Do's and Don'ts
 
-- Keep existing app strings unchanged; new Table labels only name fields already in the pathway data.
-- Keep controls in the same order; redesign placement and density only.
-- Keep identifiers, dates, facilities, and pathway text monospaced.
-- Use rules and whitespace to separate groups.
-- Don't add cards, gradients, hero art, icons, marketing copy, rounded pills, or decorative motion. The dark studies use only the framing described above.
-- Don't recolor success states green; a plain ruled status is enough.
+- Keep existing UI copy, rendered pathway text, watermarks, and source JSON byte-identical.
+- Keep manual-entry fields limited to the nine web-editable fields; `location` and `landmark` stay unavailable.
+- Keep Datasets, Bulk, History, Help, demo, copy, export, and update check reachable after reveal.
+- Don't add cards, gradients as decoration, glows, bezel frames, icons, rounded pills, or decorative motion.
+- Don't use cyan for links, active navigation, errors, or buttons at rest.
 - Don't present a missing book-out as current detention; show `UNKNOWN`.
-- Don't hide the dataset watermark or browser-local history note.
+- Don't change production styling or remove the Record workbench fallback.

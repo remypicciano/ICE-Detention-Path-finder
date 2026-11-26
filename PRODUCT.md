@@ -26,20 +26,20 @@ Production at `https://bronx.remypicciano.me`; staging at `https://bronx-staging
 
 - Preserve the functionality of the non-website software, including output text and data semantics.
 - Identifier, stay ID, and stint ID search across release shards; alias focus for stay/stint IDs.
-- Manual entries for all desktop fields except arrest location; `[MANUAL_EDIT original=…]` tagging preserved.
+- Manual entries for all desktop fields except arrest location and landmark; `[MANUAL_EDIT original=…]` tagging preserved.
 - Bulk search capped at 200 identifiers; exports stored as temporary R2 objects.
 - Copy and source-only JSON export.
 - History lives only in browser `localStorage` (`bronx.history.v1`).
 - Free-tier Cloudflare only: Workers Free + R2 Free. No paid Workers, containers, or public API.
 - Staging and production use separate Workers and R2 buckets.
-- Staging uses one lookup panel, a stays/stints Table tab, and keeps the Datasets tab; production keeps the two-column workbench.
-- Staging offers four visual/workflow studies — Record fallback plus dark Manifest, Reading room, and Microfilm — switchable without changing lookup data, rendered pathway text, history, or cache keys.
+- Staging opens on one centered search bar; a lookup reveals the top bar, Table tab, release disclosure, pathway, and actions. A stored reveal flag keeps the ledger visible on return visits.
+- Staging has one committed flat film ledger direction. There is no style switcher; legacy `?style=` links resolve to it. Production keeps the untouched two-column Record workbench.
 - Table view reads the same lookup result; it never replaces the rendered pathway or changes search cache keys.
 - Existing UI copy and rendered pathway text stay byte-identical; new Table labels name fields already present in the data.
 
 ## Brand Commitments
 
-Name and product language come from the existing desktop app and current web UI. The user explicitly requires keeping existing functionality, data, and copy. No new voice, logo, claim, testimonial, or metric may be invented.
+Name and product language come from the existing desktop app and current web UI. The user explicitly requires keeping existing functionality, data, and copy, and pinned staging to a flat film ledger with one centered bar. Production must stay on the original workbench. No new voice, logo, claim, testimonial, or metric may be invented.
 
 ## Evidence on Hand
 

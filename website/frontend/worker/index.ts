@@ -13,7 +13,6 @@ import {
   indexPage,
   lookupPage,
   makeHistoryEntry,
-  styleOf,
   tablePage,
   type BulkResult,
   type IndexOptions,
@@ -200,7 +199,8 @@ async function handle(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
   const single = isStaging(url);
-  const styleFor = (value: unknown) => (single ? styleOf(value) : "record");
+  // One committed direction per environment; legacy style links are inert.
+  const styleFor = (_value: unknown) => (single ? ("film" as const) : ("record" as const));
   const style = styleFor(url.searchParams.get("style"));
 
   if (path === "/health") return text("ok");
@@ -228,14 +228,18 @@ async function handle(request: Request, env: Env): Promise<Response> {
     single && view === "table" ? tablePage(options) : renderIndex(options);
 
   if (request.method === "GET" && path === "/") {
+    const defaults = defaultResult();
+    const preset = url.searchParams.get("q") || "";
     return html(
       renderIndex({
         manifest: manifestValue,
-        ...defaultResult(),
+        ...defaults,
+        status: single && !preset ? "" : defaults.status,
         error: null,
-        enteredIdentifier: url.searchParams.get("q") || "",
+        enteredIdentifier: preset,
         enteredRelease: url.searchParams.get("release") || manifestValue.default_release,
         style,
+        revealed: !single || Boolean(preset),
       }),
     );
   }

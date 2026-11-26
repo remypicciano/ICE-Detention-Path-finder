@@ -9,7 +9,7 @@ README-v2.md. Unmarked items remain open.
 Counts are from the **national** datasets now in place (the original NYC-only
 arrests copy, 23,909 rows, was replaced): arrests 896,393 rows / 812,823
 people · detention stints 3,202,317 rows / 1,174,420 people · detention stays
-1,264,756 rows · facilities 877 rows. Data window: book-in 2021-10-01 →
+1,264,756 rows · facilities 878 rows. Data window: book-in 2021-10-01 →
 2026-08-06, book-out 2022-10-01 → 2026-08-06. Items marked **(2025-08 era)**
 were measured on the previous release: arrests 713,464 rows / 651,237 people ·
 detention stints 2,617,844 rows / 1,014,866 people · detention stays 1,087,417
@@ -108,7 +108,7 @@ checks the rendered expressions rather than the source columns.
 
 ### A0.8 — National bulk verification on the 2026-09-30 release · PASS
 
-`verify_bulk.py` over all 1,174,420 people / 1,264,756 stays / 3,191,399 stints
+`verify_bulk.py` over all 1,174,420 people / 1,264,756 stays / 3,202,317 stints
 (790s), and again on the 2025-08 files to confirm no regression:
 
 | | 2026-09-30 | 2025-08 (200k sample) |
@@ -207,6 +207,30 @@ makes the durable artifact self-contained.
 people tables collapse `birth_year`/`gender` with `any_value`; a handful of
 identifiers carry internal conflicts, and an arbitrary pick there can flip a
 match verdict.
+
+### A0.10 — 2026-11-26 data freshness sweep · PASS with runbook fixes
+
+Downloaded all five supplied `deportationdata/ice` links and compared them to
+the files used by the desktop app, the web build, and both R2 buckets. GitHub
+ETags match local SHA-256 hashes byte-for-byte: arrests `9aa0d482…`, stints
+`465c1336…`, stays `1f70ef56…`, joined `b66433a6…`, facilities `cce1c18e…`.
+The newest record in the core files is `2026-08-06T00:48Z`; the publisher's
+latest data commit is 2026-09-22. The apparent 2026-11-26 `Last-Modified` on
+the CDN is a retrieval timestamp, not new content.
+
+Live staging and production manifests both report `built_at
+2026-11-23T23:45:08Z`, `NEW — current`, and `dataset-NEW data-up-to=2026-08-06`.
+A staging API lookup for `00001004d1cb0b011bdbcd2b81c4cd56569ca759` is
+byte-identical to a fresh lookup through the unchanged desktop engine over the
+downloaded files; production `/search` returns the same text.
+
+Two refresh hazards were found and the documented runbook now avoids both:
+stable `*-latest.parquet` URLs can change without a URL change, so full builds
+use `--refresh-data`; and `upload_index.py --skip-existing` compares keys only,
+so data refreshes upload the full build without that flag. The website still
+uses three source files (arrests, stints, facilities); stays and joined files
+are optional checks, and `detainers-latest.parquet` remains unwired for the
+row-multiplication reason in A0.7.
 
 ---
 

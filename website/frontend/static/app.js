@@ -7,6 +7,7 @@
   const HISTORY_LIMIT = 5000;
   const LOOKUP_CACHE_KEY = 'bronx.lookup-cache.v1';
   const LOOKUP_CACHE_LIMIT = 60;
+  const REVEAL_KEY = 'bronx.staging.revealed.v1';
   const lookupMemory = new Map();
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -135,9 +136,6 @@
       fillRow(row, entry);
       row.addEventListener('click', () => {
         const params = new URLSearchParams({ q: entry.identifier });
-        if (body.dataset.style && body.dataset.style !== 'record') {
-          params.set('style', body.dataset.style);
-        }
         window.location.href = `${base}/?${params}`;
       });
       tbody.appendChild(row);
@@ -151,13 +149,23 @@
     if (field) field.value = value;
   }
 
-  function syncStyleForm(identifier, release) {
-    const form = $('.style-switch');
-    if (!form) return;
-    const q = $('[name="q"]', form);
-    const releaseField = $('[name="release"]', form);
-    if (q) q.value = identifier;
-    if (releaseField) releaseField.value = release;
+  function markRevealed() {
+    if (body.dataset.style !== 'film') return;
+    body.dataset.stage = 'work';
+    try {
+      localStorage.setItem(REVEAL_KEY, '1');
+    } catch (_error) {
+      // A blocked storage write must not stop the lookup.
+    }
+  }
+
+  function restoreReveal() {
+    if (body.dataset.style !== 'film' || body.dataset.stage !== 'entry') return;
+    try {
+      if (localStorage.getItem(REVEAL_KEY) === '1') body.dataset.stage = 'work';
+    } catch (_error) {
+      // Start at the bar when storage is unavailable.
+    }
   }
 
   function syncTopbarHeight() {
@@ -185,38 +193,6 @@
     }
   }
 
-  function applyStyle(style) {
-    body.dataset.style = style;
-    $('meta[name="color-scheme"]')?.setAttribute('content', style === 'record' ? 'light' : 'dark');
-    $('.style-switch')?.setAttribute('action', window.location.pathname);
-    $$('input[type="hidden"][name="style"]').forEach((field) => {
-      field.value = style;
-    });
-    syncStyleForm($('#identifier')?.value || '', $('#release')?.value || '');
-    $$('a[href]').forEach((link) => {
-      const href = link.getAttribute('href') || '';
-      if (!href.startsWith('/') || href.startsWith('//') || href.includes('/export.')) return;
-      const url = new URL(href, window.location.origin);
-      if (url.origin !== window.location.origin) return;
-      if (style === 'record') url.searchParams.delete('style');
-      else url.searchParams.set('style', style);
-      link.setAttribute('href', `${url.pathname}${url.search}${url.hash}`);
-    });
-  }
-
-  function setupStyleSwitch() {
-    const select = $('#style-select');
-    applyStyle(body.dataset.style || 'record');
-    select?.addEventListener('change', () => {
-      const style = select.value;
-      applyStyle(style);
-      const url = new URL(window.location.href);
-      if (style === 'record') url.searchParams.delete('style');
-      else url.searchParams.set('style', style);
-      window.history.replaceState(null, '', url);
-    });
-  }
-
   function setupMainPage() {
     const resultText = $('#result-text');
     const identifier = $('#identifier');
@@ -234,11 +210,22 @@
     const cacheKey = (entered, release, overrideText) =>
       [cacheVersion, release, entered, overrideText].join('|');
 
-    // A query string from the history page pre-fills the identifier box.
+    // A query string from the history page reopens that lookup.
     const preset = new URLSearchParams(window.location.search).get('q');
     if (preset && identifier) identifier.value = preset;
 
+    const presetForm = $('#search-form');
+    if (inline && preset && presetForm && !(resultText && resultText.value)) {
+      void submitLookup(
+        presetForm,
+        preset,
+        currentRelease(),
+        $('#overrides-input')?.value || '{}',
+      );
+    }
+
     if (resultText && resultText.value) {
+      markRevealed();
       const entry = JSON.parse(body.dataset.historyEntry || 'null');
       if (entry?.identifier && entry.identifier !== 'UFAKE-0001') {
         addHistory(entry);
@@ -282,7 +269,6 @@
       if (!resultText || !identifier) return;
       const overrideText = JSON.stringify(payload.overrides || {});
       identifier.value = entered;
-      syncStyleForm(entered, release);
       resultText.value = payload.text || '';
       if (statusLine) statusLine.textContent = payload.status || '';
       stayCount = Number(payload.stays || 0);
@@ -307,13 +293,20 @@
       url.searchParams.set('q', entered);
       url.searchParams.set('release', release);
       window.history.replaceState(null, '', url);
+      const tableNav = $('[data-staging-nav="table"]');
+      if (tableNav) {
+        const tableUrl = new URL('/table', window.location.origin);
+        tableUrl.searchParams.set('q', entered);
+        tableUrl.searchParams.set('release', release);
+        if (overrideText !== '{}') tableUrl.searchParams.set('overrides', overrideText);
+        tableNav.href = `${tableUrl.pathname}${tableUrl.search}`;
+      }
       if (resultText.value) void copyTimeline(true);
     }
 
     function applyLookupError(message) {
       if (resultText) resultText.value = '';
       if (statusLine) statusLine.textContent = message;
-      syncStyleForm(identifier?.value || '', currentRelease());
       body.dataset.stayCount = '0';
       body.dataset.overrides = '{}';
       delete body.dataset.historyEntry;
@@ -325,6 +318,7 @@
     }
 
     async function submitLookup(form, entered, release, overrideText) {
+      markRevealed();
       if (!entered) {
         if (statusLine) statusLine.textContent = 'Enter an identifier first.';
         return;
@@ -460,10 +454,10 @@
     $('#history-filter')?.addEventListener('input', renderHistory);
   }
 
+  restoreReveal();
   syncTopbarHeight();
   window.addEventListener('resize', syncTopbarHeight);
   setupMainPage();
   setupBulkPage();
   setupHistoryPage();
-  setupStyleSwitch();
 })();
